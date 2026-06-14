@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<title>LastFrame — Setup</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:rgba(0,0,0,.96);margin:0;padding:1rem;box-sizing:border-box}
+</style>
+</head>
+<body>
+<div class="login-card" style="max-width:480px;width:100%;max-height:90vh;overflow-y:auto">
+  <h2>Welcome to LastFrame</h2>
+  <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:1.5rem;text-align:center">Complete first-time setup to get started</p>
+
+  <div style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.75rem">Admin Account</div>
+  <input type="text" id="setupUsername" placeholder="Username (default: admin)" autocomplete="username">
+  <input type="password" id="setupPassword" placeholder="Password (min. 8 characters)" autocomplete="new-password">
+  <input type="password" id="setupConfirmPassword" placeholder="Confirm password" autocomplete="new-password">
+
+  <div style="margin-top:1.25rem">
+    <div style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.75rem">Jellyfin Server</div>
+    <div id="setupJellyfinFields">
+      <input type="text" id="setupJellyfinUrl" placeholder="Jellyfin Server URL (e.g. http://127.0.0.1:8096)" style="margin-bottom:0.75rem">
+      <input type="password" id="setupJellyfinApiKey" placeholder="API Key">
+    </div>
+  </div>
+
+  <div style="margin-top:1.25rem">
+    <div style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.75rem">Webhook Secret</div>
+    <div id="setupWebhookField"><input type="text" id="setupWebhookSecret" placeholder="At least 16 characters — append ?secret=… to the webhook URL"></div>
+  </div>
+
+  <button id="setupBtn" onclick="doSetup()" style="margin-top:1.5rem">Complete Setup</button>
+  <div id="setupError" class="error"></div>
+</div>
+<script>
+(async()=>{
+  try{
+    const d=await fetch('/api/auth/status').then(r=>r.json());
+    if(!d.needs_setup){location.href='/';return;}
+    const jf=document.getElementById('setupJellyfinFields');
+    const inp=(id,ph,val,type='text')=>`<input type="${type}" id="${id}" placeholder="${ph}" value="${(val||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" style="margin-bottom:0.75rem">`;
+    if(d.jellyfin_api_key_set){
+      jf.innerHTML='<div style="font-size:0.8rem;color:var(--green,#4ade80);margin-bottom:0.75rem">&#x2713; API key configured via environment variable</div>'+inp('setupJellyfinUrl','Jellyfin URL (optional override)',d.jellyfin_url_from_env);
+    }else{
+      jf.innerHTML=inp('setupJellyfinUrl','Jellyfin Server URL (e.g. http://127.0.0.1:8096)',d.jellyfin_url_from_env)+inp('setupJellyfinApiKey','API Key','','password');
+    }
+    if(d.webhook_secret_set){
+      document.getElementById('setupWebhookField').innerHTML='<div style="font-size:0.8rem;color:var(--green,#4ade80)">&#x2713; Webhook secret configured via environment variable</div>';
+    }
+  }catch(e){}
+})();
+
+async function doSetup(){
+  const btn=document.getElementById('setupBtn');
+  const err=document.getElementById('setupError');
+  const g=id=>{const el=document.getElementById(id);return el?el.value.trim():''};
+  const body={
+    username:g('setupUsername')||'admin',
+    password:document.getElementById('setupPassword').value,
+    confirm_password:document.getElementById('setupConfirmPassword').value,
+    jellyfin_url:g('setupJellyfinUrl'),
+    jellyfin_api_key:g('setupJellyfinApiKey'),
+    webhook_secret:g('setupWebhookSecret'),
+  };
+  btn.disabled=true;btn.textContent='Setting up…';err.textContent='';
+  const csrf=(document.querySelector('meta[name="csrf-token"]')||{}).content||'';
+  try{
+    const resp=await fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf},body:JSON.stringify(body)});
+    const data=await resp.json();
+    if(!resp.ok||!data.success){err.textContent=data.error||'Setup failed';btn.disabled=false;btn.textContent='Complete Setup';return;}
+    location.href='/';
+  }catch(e){err.textContent='Setup failed: '+e.message;btn.disabled=false;btn.textContent='Complete Setup';}
+}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!document.getElementById('setupBtn').disabled)doSetup();});
+</script>
+</body>
+</html>

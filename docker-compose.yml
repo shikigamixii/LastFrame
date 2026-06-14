@@ -1,0 +1,17 @@
+services:
+  lastframe:
+    build: .
+    ports:
+      - "${HOST_PORT}:8080"
+    volumes:
+      - lastframe_data:/data
+    environment:
+      - JELLYFIN_URL=${JELLYFIN_URL:-http://127.0.0.1:8096}
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
+      - JELLYFIN_WEBHOOK_SECRET=${JELLYFIN_WEBHOOK_SECRET:-}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      - DATA_DIR=/data
+    restart: unless-stopped
+
+volumes:
+  lastframe_data:
