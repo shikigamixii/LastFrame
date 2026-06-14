@@ -59,8 +59,12 @@ def _inject_static_version():
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
+# Default off so plain-HTTP LAN deployments (the documented happy path) can
+# persist the session cookie that Flask-WTF needs to validate CSRF tokens.
+# Set SESSION_COOKIE_SECURE=1 when serving over HTTPS.
+_secure_cookie = os.environ.get("SESSION_COOKIE_SECURE", "0").strip().lower() in ("1", "true", "yes", "on")
 app.config.update(
-    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SECURE=_secure_cookie,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     WTF_CSRF_TIME_LIMIT=None,
