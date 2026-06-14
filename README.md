@@ -53,7 +53,7 @@ You can find or generate a Jellyfin API key under **Dashboard → API Keys** in 
 #### 3. Start the container
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 #### 4. Complete setup in your browser
@@ -275,7 +275,7 @@ LastFrame can automatically delete media after all assigned users have watched i
 
 ```bash
 git pull
-docker compose up -d --build
+docker compose up -d --build --build
 ```
 
 Your data volume is preserved automatically.
