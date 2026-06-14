@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+data.db
+audit.log
+config.json
+*.env
+.env
+.flask_secret_key
