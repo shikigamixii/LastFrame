@@ -75,7 +75,7 @@ SSH in and clone into a folder under your `docker` share (create the share first
 ```bash
 ssh admin@<your-nas-ip>
 cd /volume1/docker
-sudo git clone -b feature/plex https://github.com/shikigamixii/LastFrame.git lastframe
+sudo git clone https://github.com/kricha04/LastFrame.git lastframe
 cd lastframe
 ```
 
@@ -227,6 +227,22 @@ sudo systemctl daemon-reload
 sudo systemctl enable lastframe
 sudo systemctl start lastframe
 ```
+
+---
+
+## Serving over HTTPS (optional)
+
+LastFrame ships configured for plain HTTP on your LAN, which is the documented
+setup above. If you put it behind a reverse proxy with TLS (Caddy, nginx,
+Traefik, etc.), set `SESSION_COOKIE_SECURE=1` in your environment so the
+session cookie carries the `Secure` flag:
+
+```bash
+echo "SESSION_COOKIE_SECURE=1" >> .env
+```
+
+Leave it unset (or `0`) for HTTP access — otherwise browsers drop the session
+cookie and the setup wizard / login will fail CSRF validation.
 
 ---
 
