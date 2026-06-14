@@ -11,18 +11,18 @@ LastFrame supports two media server backends, each maintained on its own branch.
 ### Jellyfin
 
 ```bash
-git clone -b feature/jellyfin https://github.com/kricha04/LastFrame.git ~/lastframe
+git clone -b feature/jellyfin https://github.com/shikigamixii/LastFrame.git ~/lastframe
 ```
 
-See the [`feature/jellyfin` README](https://github.com/kricha04/LastFrame/blob/feature/jellyfin/README.md) for full setup instructions (Docker quickstart, webhook setup, auto-delete configuration).
+See the [`feature/jellyfin` README](https://github.com/shikigamixii/LastFrame/blob/feature/jellyfin/README.md) for full setup instructions (Docker quickstart, webhook setup, auto-delete configuration).
 
 ### Plex
 
 ```bash
-git clone -b feature/plex https://github.com/kricha04/LastFrame.git ~/lastframe
+git clone -b feature/plex https://github.com/shikigamixii/LastFrame.git ~/lastframe
 ```
 
-See the [`feature/plex` README](https://github.com/kricha04/LastFrame/blob/feature/plex/README.md) for full setup instructions (Docker quickstart, webhook setup, auto-delete configuration). Plex webhook support requires Plex Pass.
+See the [`feature/plex` README](https://github.com/shikigamixii/LastFrame/blob/feature/plex/README.md) for full setup instructions (Docker quickstart, webhook setup, auto-delete configuration). Plex webhook support requires Plex Pass.
 
 ---
 
