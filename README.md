@@ -29,7 +29,7 @@ A self-hosted web dashboard for tracking and managing Plex watch history across 
 #### 1. Clone the repository
 
 ```bash
-git clone https://github.com/kricha04/LastFrame.git ~/lastframe
+git clone https://github.com/shikigamixii/LastFrame.git ~/lastframe
 cd ~/lastframe
 ```
 
@@ -75,7 +75,7 @@ SSH in and clone into a folder under your `docker` share (create the share first
 ```bash
 ssh admin@<your-nas-ip>
 cd /volume1/docker
-sudo git clone https://github.com/kricha04/LastFrame.git lastframe
+sudo git clone https://github.com/shikigamixii/LastFrame.git lastframe
 cd lastframe
 ```
 
@@ -148,7 +148,7 @@ sudo docker compose -f docker-compose.synology.yml up -d --build
 #### 1. Clone the repository
 
 ```bash
-git clone https://github.com/kricha04/LastFrame.git ~/lastframe
+git clone https://github.com/shikigamixii/LastFrame.git ~/lastframe
 cd ~/lastframe
 ```
 
