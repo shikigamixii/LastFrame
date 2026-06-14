@@ -40,6 +40,7 @@ cd ~/lastframe
 echo "JELLYFIN_API_KEY=your_api_key_here" > .env
 echo "FLASK_SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')" >> .env
 echo "JELLYFIN_WEBHOOK_SECRET=$(python3 -c 'import secrets; print(secrets.token_hex(24))')" >> .env
+echo "HOST_PORT=<CHOOSE YOUR PORT>" >> .env
 
 # Optional — only needed if Jellyfin isn't on the same host
 # echo "JELLYFIN_URL=http://<your-server-ip>:8096" >> .env
