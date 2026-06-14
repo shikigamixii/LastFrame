@@ -8,9 +8,12 @@ services:
     volumes:
       - /volume1/docker/lastframe/data:/data
     environment:
-      - PLEX_URL=${PLEX_URL:-http://127.0.0.1:32400}
-      - PLEX_TOKEN=${PLEX_TOKEN}
+      # All Plex settings can be left blank here and entered in the setup
+      # wizard instead. If you do set them in .env, the env value wins.
+      - PLEX_URL=${PLEX_URL:-}
+      - PLEX_TOKEN=${PLEX_TOKEN:-}
       - PLEX_WEBHOOK_SECRET=${PLEX_WEBHOOK_SECRET:-}
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-}
       - DATA_DIR=/data
     restart: unless-stopped
