@@ -6,10 +6,13 @@ services:
     volumes:
       - lastframe_data:/data
     environment:
-      - JELLYFIN_URL=${JELLYFIN_URL:-http://127.0.0.1:8096}
-      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
+      # All Jellyfin settings can be left blank here and entered in the setup
+      # wizard instead. If you do set them in .env, the env value wins.
+      - JELLYFIN_URL=${JELLYFIN_URL:-}
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
       - JELLYFIN_WEBHOOK_SECRET=${JELLYFIN_WEBHOOK_SECRET:-}
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-}
       - DATA_DIR=/data
     restart: unless-stopped
 
