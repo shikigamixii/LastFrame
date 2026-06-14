@@ -1,0 +1,16 @@
+services:
+  lastframe:
+    build: .
+    container_name: lastframe
+    ports:
+      # Set HOST_PORT in your .env to any free port that doesn't conflict with DSM's 8080.
+      - "${HOST_PORT}:8080"
+    volumes:
+      - /volume1/docker/lastframe/data:/data
+    environment:
+      - PLEX_URL=${PLEX_URL:-http://127.0.0.1:32400}
+      - PLEX_TOKEN=${PLEX_TOKEN}
+      - PLEX_WEBHOOK_SECRET=${PLEX_WEBHOOK_SECRET:-}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      - DATA_DIR=/data
+    restart: unless-stopped

@@ -1,0 +1,17 @@
+services:
+  lastframe:
+    build: .
+    ports:
+      - "${HOST_PORT}:8080"
+    volumes:
+      - lastframe_data:/data
+    environment:
+      - PLEX_URL=${PLEX_URL:-http://127.0.0.1:32400}
+      - PLEX_TOKEN=${PLEX_TOKEN}
+      - PLEX_WEBHOOK_SECRET=${PLEX_WEBHOOK_SECRET:-}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      - DATA_DIR=/data
+    restart: unless-stopped
+
+volumes:
+  lastframe_data:
