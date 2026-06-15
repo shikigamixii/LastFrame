@@ -47,6 +47,14 @@
   </div>
 </div>
 
+<!-- Item Detail Overlay (movie / series) -->
+<div class="item-detail-overlay" id="itemDetailOverlay" onclick="if(event.target===this)closeItemOverlay()">
+  <div class="item-detail-inner">
+    <button class="item-detail-close" type="button" aria-label="Close" onclick="closeItemOverlay()">×</button>
+    <div id="itemDetailContent"><div class="loading">Loading</div></div>
+  </div>
+</div>
+
 <!-- Delete Modal -->
 <div class="modal-overlay" id="deleteModal"><div class="modal"><h3>Confirm Delete</h3><p id="deleteModalBody" style="white-space:pre-line"></p><div class="warning">This will permanently delete the file(s) from disk. If you are seeding these files, this will break the torrent.</div><div class="modal-actions"><button class="btn-cancel" onclick="closeDeleteModal()">Cancel</button><button class="btn-confirm-delete" id="deleteModalConfirm">Delete</button></div></div></div>
 
