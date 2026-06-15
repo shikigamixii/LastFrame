@@ -1,10 +1,12 @@
 services:
   lastframe:
     build: .
+    container_name: lastframe
     ports:
+      # Set HOST_PORT in your .env to any free port that doesn't conflict with DSM's 8080.
       - "${HOST_PORT}:8080"
     volumes:
-      - lastframe_data:/data
+      - /volume1/docker/lastframe/data:/data
     environment:
       # All Jellyfin settings can be left blank here and entered in the setup
       # wizard instead. If you do set them in .env, the env value wins.
@@ -15,6 +17,3 @@ services:
       - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-}
       - DATA_DIR=/data
     restart: unless-stopped
-
-volumes:
-  lastframe_data:
