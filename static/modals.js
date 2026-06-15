@@ -42,6 +42,7 @@ async function confirmBulkAssign(){
       const cb=_bulkCallback;
       closeBulkAssignModal();
       S.selectedItemIds.clear();
+      if(typeof invalidateWatchSummaryCache==='function')invalidateWatchSummaryCache();
       if(cb)cb();else route();
     }else{
       document.getElementById("bulkAssignError").innerText=resp.error||"Assignment failed";
