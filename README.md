@@ -1,5 +1,7 @@
 # LastFrame (Jellyfin)
 
+Built with Claude Code but there is no AI baked into this project.
+
 A self-hosted web dashboard for tracking and managing Jellyfin watch history across multiple users. Browse your libraries, see per-user watch progress, filter by genre or completion status, and automatically delete watched media after a configurable grace period.
 
 ## Features
