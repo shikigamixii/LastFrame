@@ -1268,6 +1268,7 @@ def api_debug_history():
         "total_in_page": len(items),
         "matches": len(out),
         "accounts": plex_accounts(),
+        "sample_raw": items[0] if items else None,
         "results": out,
     })
 
