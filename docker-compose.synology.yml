@@ -20,4 +20,11 @@ services:
       # media.scrobble webhooks do not fire for managed (Plex Home) users.
       # Set to 0 to disable.
       - PLEX_HISTORY_POLL_INTERVAL=${PLEX_HISTORY_POLL_INTERVAL:-}
+    # DSM sometimes hands containers a DNS resolver they can't reach, which
+    # breaks outbound lookups like plex.tv (needed for managed-user token
+    # minting). Pin to public resolvers so the container can always do
+    # external DNS regardless of host config.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     restart: unless-stopped
