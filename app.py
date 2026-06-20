@@ -1217,6 +1217,61 @@ def api_backfill_history():
     return jsonify(result)
 
 
+@app.route("/api/admin/debug-history")
+@login_required_api
+def api_debug_history():
+    """Return raw rows from /status/sessions/history/all for diagnosis.
+
+    Optional ?key=<ratingKey> (matches item/parent/grandparent ratingKey) and
+    ?title=<substring> (case-insensitive on title/grandparentTitle/parentTitle).
+    Used to verify whether a given mark-as-watched produced a history entry.
+    """
+    key = (request.args.get("key") or "").strip()
+    title_q = (request.args.get("title") or "").strip().lower()
+    try:
+        mc = plex_get("/status/sessions/history/all", {
+            "sort": "viewedAt:desc",
+            "X-Plex-Container-Start": 0,
+            "X-Plex-Container-Size": 500,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+    items = mc.get("Metadata") or mc.get("Video") or []
+    out = []
+    for i in items:
+        if key and key not in (
+            str(i.get("ratingKey") or ""),
+            str(i.get("parentRatingKey") or ""),
+            str(i.get("grandparentRatingKey") or ""),
+        ):
+            continue
+        if title_q:
+            blob = " ".join(str(i.get(k) or "") for k in ("title", "grandparentTitle", "parentTitle")).lower()
+            if title_q not in blob:
+                continue
+        viewed_at = i.get("viewedAt")
+        out.append({
+            "ratingKey": i.get("ratingKey"),
+            "parentRatingKey": i.get("parentRatingKey"),
+            "grandparentRatingKey": i.get("grandparentRatingKey"),
+            "type": i.get("type"),
+            "title": i.get("title"),
+            "grandparentTitle": i.get("grandparentTitle"),
+            "season": i.get("parentIndex"),
+            "episode": i.get("index"),
+            "accountID": i.get("accountID"),
+            "viewedAt": viewed_at,
+            "viewedAtISO": datetime.fromtimestamp(viewed_at, tz=timezone.utc).isoformat() if viewed_at else None,
+        })
+    return jsonify({
+        "ok": True,
+        "total_in_page": len(items),
+        "matches": len(out),
+        "accounts": plex_accounts(),
+        "results": out,
+    })
+
+
 # Background poll: re-imports recent Plex history so managed (Plex Home) users —
 # whose plays do not generate media.scrobble webhooks — show up without manual
 # intervention. Set PLEX_HISTORY_POLL_INTERVAL=0 to disable.
