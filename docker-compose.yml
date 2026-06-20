@@ -20,4 +20,9 @@ services:
       # media.scrobble webhooks do not fire for managed (Plex Home) users.
       # Set to 0 to disable.
       - PLEX_HISTORY_POLL_INTERVAL=${PLEX_HISTORY_POLL_INTERVAL:-}
+    # Pin DNS so outbound lookups (plex.tv for managed-user token minting)
+    # work regardless of how the host wired up Docker's default resolver.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     restart: unless-stopped
