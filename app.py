@@ -1330,100 +1330,151 @@ def _get_managed_user_token(home_user_id):
         _managed_user_token_cache[home_user_id] = (token, now)
     return token
 
+def _run_managed_user_sweep():
+    """Run one cycle of the managed-user sweep, returning a diagnostic report.
+
+    Separated from the timer loop so /api/admin/debug-managed-sweep can call
+    it synchronously and surface what each step is doing.
+    """
+    report = {"users": [], "imported": 0, "skipped_reason": None}
+
+    if not get_plex_token() or not get_plex_url():
+        report["skipped_reason"] = "no plex token or url"
+        return report
+
+    try:
+        home_users = plex_tv_home_users()
+    except Exception as e:
+        report["skipped_reason"] = f"plex.tv home users fetch failed: {e}"
+        return report
+
+    if not home_users:
+        report["skipped_reason"] = "no home users returned"
+        return report
+
+    try:
+        local_accounts = plex_all_accounts()
+    except Exception as e:
+        report["skipped_reason"] = f"local accounts fetch failed: {e}"
+        return report
+    # Case-insensitive name match; plex.tv title and local /accounts name don't
+    # always agree on case (e.g. "PRINCESS" vs "Princess").
+    local_by_name = {a["name"].strip().lower(): a["id"] for a in local_accounts}
+
+    try:
+        sections = plex_sections()
+    except Exception as e:
+        report["skipped_reason"] = f"sections fetch failed: {e}"
+        return report
+    target_sections = [s for s in sections if s.get("type") in ("movie", "show")]
+    if not target_sections:
+        report["skipped_reason"] = "no movie/show sections"
+        return report
+
+    db = get_db()
+    try:
+        for hu in home_users:
+            entry = {
+                "home_id": hu.get("id"),
+                "title": hu.get("title"),
+                "admin": hu.get("admin"),
+                "protected": hu.get("protected"),
+                "local_account_id": None,
+                "token_ok": False,
+                "sections": [],
+                "imported": 0,
+                "skipped_reason": None,
+            }
+            if hu.get("admin"):
+                entry["skipped_reason"] = "admin (owner already covered by webhook)"
+                report["users"].append(entry)
+                continue
+            title = (hu.get("title") or "").strip()
+            if not title:
+                entry["skipped_reason"] = "no title"
+                report["users"].append(entry)
+                continue
+            local_id = local_by_name.get(title.lower())
+            entry["local_account_id"] = local_id
+            if not local_id:
+                entry["skipped_reason"] = "no matching local /accounts entry"
+                report["users"].append(entry)
+                continue
+            if hu.get("protected"):
+                entry["skipped_reason"] = "PIN-protected"
+                report["users"].append(entry)
+                continue
+            user_token = _get_managed_user_token(hu.get("id"))
+            if not user_token:
+                entry["skipped_reason"] = "switch token mint failed"
+                report["users"].append(entry)
+                continue
+            entry["token_ok"] = True
+
+            for s in target_sections:
+                section_key = s.get("key")
+                section_type = s.get("type")
+                item_type_code = "1" if section_type == "movie" else "4"
+                item_type = "movie" if section_type == "movie" else "episode"
+                sect_entry = {
+                    "section_key": section_key,
+                    "section_title": s.get("title"),
+                    "watched_returned": 0,
+                    "imported": 0,
+                    "error": None,
+                }
+                try:
+                    mc = plex_get_with_token(
+                        f"/library/sections/{section_key}/all",
+                        user_token,
+                        {"type": item_type_code, "unwatched": 0, "includeGuids": 1,
+                         "X-Plex-Container-Size": 10000},
+                    )
+                except Exception as e:
+                    sect_entry["error"] = str(e)
+                    entry["sections"].append(sect_entry)
+                    continue
+
+                items = mc.get("Metadata") or []
+                sect_entry["watched_returned"] = len(items)
+                for item in items:
+                    rk = str(item.get("ratingKey") or "")
+                    if not rk:
+                        continue
+                    if (item.get("viewCount") or 0) <= 0:
+                        continue
+                    providers = parse_plex_guids(item.get("Guid") or [])
+                    if not providers:
+                        continue
+                    last_viewed = item.get("lastViewedAt")
+                    if not last_viewed:
+                        continue
+                    iso_ts = datetime.fromtimestamp(last_viewed, tz=timezone.utc).isoformat()
+                    for ptype, pid in providers.items():
+                        cur = db.execute(
+                            """INSERT OR IGNORE INTO plex_watch_events
+                               (plex_account_id, provider_type, provider_id, item_type, event_type, updated_at, rating_key)
+                               VALUES (?, ?, ?, ?, 'play', ?, ?)""",
+                            (local_id, ptype.lower(), str(pid), item_type, iso_ts, rk)
+                        )
+                        sect_entry["imported"] += cur.rowcount
+                        entry["imported"] += cur.rowcount
+                        report["imported"] += cur.rowcount
+                entry["sections"].append(sect_entry)
+            report["users"].append(entry)
+        db.commit()
+    finally:
+        db.close()
+
+    return report
+
 def _managed_user_sweep():
     try:
-        if not get_plex_token() or not get_plex_url():
-            return
-
-        try:
-            home_users = plex_tv_home_users()
-        except Exception as e:
-            app.logger.warning(f"Managed-user sweep: plex.tv home users fetch failed: {e}")
-            return
-        # Drop the admin entry — owner state is already covered by media.scrobble.
-        home_users = [u for u in home_users if not u.get("admin")]
-        if not home_users:
-            return
-
-        # Match plex.tv display name to the local /accounts entry so we can write
-        # rows under the same plex_account_id the rest of the app uses.
-        try:
-            local_by_name = {a["name"]: a["id"] for a in plex_all_accounts()}
-        except Exception as e:
-            app.logger.warning(f"Managed-user sweep: local accounts fetch failed: {e}")
-            return
-
-        try:
-            sections = plex_sections()
-        except Exception as e:
-            app.logger.warning(f"Managed-user sweep: sections fetch failed: {e}")
-            return
-        target_sections = [s for s in sections if s.get("type") in ("movie", "show")]
-        if not target_sections:
-            return
-
-        db = get_db()
-        imported = 0
-        try:
-            for hu in home_users:
-                hu_id = hu.get("id")
-                title = hu.get("title")
-                if not hu_id or not title:
-                    continue
-                local_id = local_by_name.get(title)
-                if not local_id:
-                    continue
-                if hu.get("protected"):
-                    # PIN-protected Home users would need the PIN forwarded to the
-                    # switch endpoint; not handled yet.
-                    continue
-                user_token = _get_managed_user_token(hu_id)
-                if not user_token:
-                    continue
-
-                for s in target_sections:
-                    section_key = s.get("key")
-                    section_type = s.get("type")
-                    item_type_code = "1" if section_type == "movie" else "4"
-                    item_type = "movie" if section_type == "movie" else "episode"
-                    try:
-                        mc = plex_get_with_token(
-                            f"/library/sections/{section_key}/all",
-                            user_token,
-                            {"type": item_type_code, "unwatched": 0, "includeGuids": 1,
-                             "X-Plex-Container-Size": 10000},
-                        )
-                    except Exception as e:
-                        app.logger.warning(f"Managed-user sweep: section {section_key} for {title}: {e}")
-                        continue
-
-                    for item in (mc.get("Metadata") or []):
-                        rk = str(item.get("ratingKey") or "")
-                        if not rk:
-                            continue
-                        if (item.get("viewCount") or 0) <= 0:
-                            continue
-                        providers = parse_plex_guids(item.get("Guid") or [])
-                        if not providers:
-                            continue
-                        last_viewed = item.get("lastViewedAt")
-                        if not last_viewed:
-                            continue
-                        iso_ts = datetime.fromtimestamp(last_viewed, tz=timezone.utc).isoformat()
-                        for ptype, pid in providers.items():
-                            cur = db.execute(
-                                """INSERT OR IGNORE INTO plex_watch_events
-                                   (plex_account_id, provider_type, provider_id, item_type, event_type, updated_at, rating_key)
-                                   VALUES (?, ?, ?, ?, 'play', ?, ?)""",
-                                (local_id, ptype.lower(), str(pid), item_type, iso_ts, rk)
-                            )
-                            imported += cur.rowcount
-            db.commit()
-        finally:
-            db.close()
-
-        if imported:
-            app.logger.info(f"Managed-user sweep: imported {imported} new events")
+        report = _run_managed_user_sweep()
+        if report.get("skipped_reason"):
+            app.logger.info(f"Managed-user sweep skipped: {report['skipped_reason']}")
+        else:
+            app.logger.info(f"Managed-user sweep: imported {report['imported']} events across {len(report['users'])} users")
     except Exception as e:
         app.logger.warning(f"Managed-user sweep error: {e}")
     finally:
@@ -1431,6 +1482,13 @@ def _managed_user_sweep():
             t = threading.Timer(MANAGED_USER_SWEEP_INTERVAL, _managed_user_sweep)
             t.daemon = True
             t.start()
+
+
+@app.route("/api/admin/debug-managed-sweep", methods=["POST"])
+@login_required_api
+def api_debug_managed_sweep():
+    """Run one managed-user sweep synchronously and return the per-user report."""
+    return jsonify(_run_managed_user_sweep())
 
 
 if MANAGED_USER_SWEEP_INTERVAL > 0:
