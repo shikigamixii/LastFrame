@@ -1117,19 +1117,26 @@ def api_recent_episodes():
     out = sorted(result.values(), key=lambda x: x.get("lastPlayedDate") or "", reverse=True)
     return jsonify(out[:10])
 
-@app.route("/api/admin/backfill-history", methods=["POST"])
-@limiter.limit("2 per hour")
-@login_required_api
-def api_backfill_history():
-    """Import historical play events from Plex's session history for all accounts."""
+def _import_plex_history(max_pages=None):
+    """Pull play events from Plex's session history into plex_watch_events.
+
+    Used by both the manual Import button and the background poll. Plex's
+    media.scrobble webhook does not fire for managed (Plex Home) users, so
+    polling /status/sessions/history/all is the only way to keep their watch
+    state current. INSERT OR IGNORE makes repeated polls safe.
+
+    With max_pages=None, fetches the entire history (manual backfill).
+    With max_pages=N, fetches at most N pages of 500 — enough for incremental
+    polling since Plex returns viewedAt:desc.
+    """
     accounts = plex_accounts()
     if not accounts:
-        return jsonify({"ok": False, "error": "no accounts"}), 400
+        return {"ok": False, "error": "no accounts", "imported": 0, "total_history": 0}
     valid_ids = {a["id"] for a in accounts}
 
-    # Fetch all history pages from Plex
     batch = 500
     start = 0
+    pages = 0
     all_history = []
     while True:
         try:
@@ -1144,10 +1151,12 @@ def api_backfill_history():
         all_history.extend(items)
         total = int(mc.get("totalSize") or mc.get("size") or 0)
         start += len(items)
+        pages += 1
         if not items or start >= total:
             break
+        if max_pages is not None and pages >= max_pages:
+            break
 
-    # Filter: only movie/episode for known accounts
     target_types = {"movie", "episode"}
     filtered = [
         i for i in all_history
@@ -1157,7 +1166,6 @@ def api_backfill_history():
         and i.get("viewedAt")
     ]
 
-    # Batch-fetch GUIDs for unique ratingKeys (chunks of 100)
     unique_keys = list({str(i["ratingKey"]) for i in filtered})
     guid_map = {}
     for i in range(0, len(unique_keys), 100):
@@ -1172,29 +1180,69 @@ def api_backfill_history():
         except Exception:
             continue
 
-    # Insert into plex_watch_events — INSERT OR IGNORE preserves existing webhook events
     db = get_db()
     imported = 0
-    for item in filtered:
-        rk = str(item["ratingKey"])
-        providers = guid_map.get(rk)
-        if not providers:
-            continue
-        account_id = str(item["accountID"])
-        item_type = (item.get("type") or "").lower()
-        iso_ts = datetime.fromtimestamp(item["viewedAt"], tz=timezone.utc).isoformat()
-        for ptype, pid in providers.items():
-            cur = db.execute(
-                """INSERT OR IGNORE INTO plex_watch_events
-                   (plex_account_id, provider_type, provider_id, item_type, event_type, updated_at, rating_key)
-                   VALUES (?, ?, ?, ?, 'play', ?, ?)""",
-                (account_id, ptype.lower(), str(pid), item_type, iso_ts, rk)
-            )
-            imported += cur.rowcount
-    db.commit()
-    db.close()
+    try:
+        for item in filtered:
+            rk = str(item["ratingKey"])
+            providers = guid_map.get(rk)
+            if not providers:
+                continue
+            account_id = str(item["accountID"])
+            item_type = (item.get("type") or "").lower()
+            iso_ts = datetime.fromtimestamp(item["viewedAt"], tz=timezone.utc).isoformat()
+            for ptype, pid in providers.items():
+                cur = db.execute(
+                    """INSERT OR IGNORE INTO plex_watch_events
+                       (plex_account_id, provider_type, provider_id, item_type, event_type, updated_at, rating_key)
+                       VALUES (?, ?, ?, ?, 'play', ?, ?)""",
+                    (account_id, ptype.lower(), str(pid), item_type, iso_ts, rk)
+                )
+                imported += cur.rowcount
+        db.commit()
+    finally:
+        db.close()
 
-    return jsonify({"ok": True, "imported": imported, "total_history": len(filtered)})
+    return {"ok": True, "imported": imported, "total_history": len(filtered)}
+
+
+@app.route("/api/admin/backfill-history", methods=["POST"])
+@limiter.limit("2 per hour")
+@login_required_api
+def api_backfill_history():
+    """Import historical play events from Plex's session history for all accounts."""
+    result = _import_plex_history()
+    if not result.get("ok"):
+        return jsonify(result), 400
+    return jsonify(result)
+
+
+# Background poll: re-imports recent Plex history so managed (Plex Home) users —
+# whose plays do not generate media.scrobble webhooks — show up without manual
+# intervention. Set PLEX_HISTORY_POLL_INTERVAL=0 to disable.
+HISTORY_POLL_INTERVAL = int(os.environ.get("PLEX_HISTORY_POLL_INTERVAL", "300"))
+HISTORY_POLL_PAGES = int(os.environ.get("PLEX_HISTORY_POLL_PAGES", "1"))
+
+def _history_poll_sweep():
+    try:
+        if get_plex_token() and get_plex_url():
+            result = _import_plex_history(max_pages=HISTORY_POLL_PAGES)
+            if result.get("imported"):
+                app.logger.info(f"History poll: imported {result['imported']} new play events")
+    except Exception as e:
+        app.logger.warning(f"History poll error: {e}")
+    finally:
+        if HISTORY_POLL_INTERVAL > 0:
+            t = threading.Timer(HISTORY_POLL_INTERVAL, _history_poll_sweep)
+            t.daemon = True
+            t.start()
+
+
+if HISTORY_POLL_INTERVAL > 0:
+    # Delay first run so init_db and the auto-delete sweep finish first.
+    _t = threading.Timer(HISTORY_POLL_INTERVAL, _history_poll_sweep)
+    _t.daemon = True
+    _t.start()
 
 @app.route("/api/watch-summary/items")
 @login_required_api
