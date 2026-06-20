@@ -1484,7 +1484,7 @@ def _managed_user_sweep():
             t.start()
 
 
-@app.route("/api/admin/debug-managed-sweep", methods=["POST"])
+@app.route("/api/admin/debug-managed-sweep", methods=["GET", "POST"])
 @login_required_api
 def api_debug_managed_sweep():
     """Run one managed-user sweep synchronously and return the per-user report."""
