@@ -50,6 +50,76 @@ def plex_get(path, params=None):
             try: _request_hook(path, time.monotonic() - t0)
             except Exception: pass
 
+def plex_get_with_token(path, token, params=None):
+    """Same as plex_get but with an explicit X-Plex-Token (per-user queries).
+
+    Used by the managed-user sweep to read per-user viewCount/lastViewedAt,
+    which Plex only returns when queried with that specific user's token.
+    No request hook — these calls aren't tied to a Flask request.
+    """
+    p = {"X-Plex-Token": token}
+    if params: p.update(params)
+    r = http_requests.get(f"{get_plex_url()}{path}", headers=PLEX_HEADERS, params=p, timeout=(5, 20))
+    r.raise_for_status()
+    if not r.content:
+        return {}
+    try:
+        return r.json().get("MediaContainer", {})
+    except ValueError:
+        return {}
+
+def plex_tv_home_users():
+    """Return [{'id','uuid','title','protected'}] for each Plex Home user.
+
+    Talks to plex.tv (not the local PMS) because the Home roster lives in the
+    cloud. Plex's /api/home/users endpoint serves XML; we parse with stdlib.
+    """
+    from xml.etree import ElementTree as ET
+    token = get_plex_token()
+    if not token:
+        return []
+    r = http_requests.get(
+        "https://plex.tv/api/home/users",
+        headers={"X-Plex-Token": token, "Accept": "application/xml"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    root = ET.fromstring(r.content)
+    out = []
+    for u in root.findall("User"):
+        out.append({
+            "id": u.attrib.get("id"),
+            "uuid": u.attrib.get("uuid"),
+            "title": (u.attrib.get("title") or "").strip(),
+            "protected": u.attrib.get("protected") == "1",
+            "admin": u.attrib.get("admin") == "1",
+        })
+    return out
+
+def plex_tv_switch_token(home_user_id):
+    """Mint a per-user auth token by hitting plex.tv's home/users/<id>/switch.
+
+    Returns None if the user is PIN-protected or the call otherwise fails.
+    The minted token is bound to that user — feeding it to the local PMS
+    causes /library/* responses to reflect that user's view state.
+    """
+    from xml.etree import ElementTree as ET
+    token = get_plex_token()
+    if not token or not home_user_id:
+        return None
+    r = http_requests.post(
+        f"https://plex.tv/api/home/users/{home_user_id}/switch",
+        headers={"X-Plex-Token": token, "Accept": "application/xml"},
+        timeout=15,
+    )
+    if r.status_code >= 400:
+        return None
+    try:
+        root = ET.fromstring(r.content)
+    except ET.ParseError:
+        return None
+    return root.attrib.get("authenticationToken") or root.attrib.get("authToken")
+
 def plex_delete(path):
     r = http_requests.delete(f"{get_plex_url()}{path}", headers=PLEX_HEADERS,
                               params={"X-Plex-Token": get_plex_token()}, timeout=30)
