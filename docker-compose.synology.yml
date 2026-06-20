@@ -16,4 +16,8 @@ services:
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
       - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-}
       - DATA_DIR=/data
+      # Background poll interval (seconds) for Plex history. Needed because
+      # media.scrobble webhooks do not fire for managed (Plex Home) users.
+      # Set to 0 to disable.
+      - PLEX_HISTORY_POLL_INTERVAL=${PLEX_HISTORY_POLL_INTERVAL:-}
     restart: unless-stopped
