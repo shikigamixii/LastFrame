@@ -19,8 +19,10 @@ from config_store import (
 from db import get_db, init_db
 from plex_api import (
     PLEX_HEADERS, get_plex_url, get_plex_token, get_webhook_secret,
-    plex_get, plex_delete, plex_get_raw, plex_accounts, plex_all_accounts,
+    plex_get, plex_delete, plex_get_raw, plex_get_with_token,
+    plex_accounts, plex_all_accounts,
     plex_owner_id, _local_account_id, plex_sections, plex_genre_id,
+    plex_tv_home_users, plex_tv_switch_token,
     ts_to_iso, parse_plex_guids, get_item_providers,
     set_request_hook as _plex_set_request_hook,
 )
@@ -1299,6 +1301,143 @@ if HISTORY_POLL_INTERVAL > 0:
     _t = threading.Timer(HISTORY_POLL_INTERVAL, _history_poll_sweep)
     _t.daemon = True
     _t.start()
+
+
+# Per-Plex-Home-user viewCount sweep. Plex does not write history rows
+# for "Mark as Watched" actions on managed users and the media.scrobble
+# webhook also does not fire for them, so neither the webhook handler nor
+# _history_poll_sweep can pick those up. The only signal is viewCount on
+# /library/* responses, but viewCount is per-token — we have to query with
+# each managed user's own token. We mint those tokens on demand via
+# plex.tv's /api/home/users/<id>/switch. Set PLEX_MANAGED_USER_SWEEP_INTERVAL=0
+# to disable, e.g. if you have no Plex Home users.
+MANAGED_USER_SWEEP_INTERVAL = int(os.environ.get("PLEX_MANAGED_USER_SWEEP_INTERVAL", "300"))
+
+_managed_user_token_cache = {}  # plex.tv user id -> (token, mint_monotonic_time)
+_MANAGED_TOKEN_TTL = 3600  # refresh hourly; switch tokens stay valid much longer in practice
+
+def _get_managed_user_token(home_user_id):
+    now = time.monotonic()
+    cached = _managed_user_token_cache.get(home_user_id)
+    if cached and now - cached[1] < _MANAGED_TOKEN_TTL:
+        return cached[0]
+    try:
+        token = plex_tv_switch_token(home_user_id)
+    except Exception as e:
+        app.logger.warning(f"Switch-user token mint failed for home id {home_user_id}: {e}")
+        return None
+    if token:
+        _managed_user_token_cache[home_user_id] = (token, now)
+    return token
+
+def _managed_user_sweep():
+    try:
+        if not get_plex_token() or not get_plex_url():
+            return
+
+        try:
+            home_users = plex_tv_home_users()
+        except Exception as e:
+            app.logger.warning(f"Managed-user sweep: plex.tv home users fetch failed: {e}")
+            return
+        # Drop the admin entry — owner state is already covered by media.scrobble.
+        home_users = [u for u in home_users if not u.get("admin")]
+        if not home_users:
+            return
+
+        # Match plex.tv display name to the local /accounts entry so we can write
+        # rows under the same plex_account_id the rest of the app uses.
+        try:
+            local_by_name = {a["name"]: a["id"] for a in plex_all_accounts()}
+        except Exception as e:
+            app.logger.warning(f"Managed-user sweep: local accounts fetch failed: {e}")
+            return
+
+        try:
+            sections = plex_sections()
+        except Exception as e:
+            app.logger.warning(f"Managed-user sweep: sections fetch failed: {e}")
+            return
+        target_sections = [s for s in sections if s.get("type") in ("movie", "show")]
+        if not target_sections:
+            return
+
+        db = get_db()
+        imported = 0
+        try:
+            for hu in home_users:
+                hu_id = hu.get("id")
+                title = hu.get("title")
+                if not hu_id or not title:
+                    continue
+                local_id = local_by_name.get(title)
+                if not local_id:
+                    continue
+                if hu.get("protected"):
+                    # PIN-protected Home users would need the PIN forwarded to the
+                    # switch endpoint; not handled yet.
+                    continue
+                user_token = _get_managed_user_token(hu_id)
+                if not user_token:
+                    continue
+
+                for s in target_sections:
+                    section_key = s.get("key")
+                    section_type = s.get("type")
+                    item_type_code = "1" if section_type == "movie" else "4"
+                    item_type = "movie" if section_type == "movie" else "episode"
+                    try:
+                        mc = plex_get_with_token(
+                            f"/library/sections/{section_key}/all",
+                            user_token,
+                            {"type": item_type_code, "unwatched": 0, "includeGuids": 1,
+                             "X-Plex-Container-Size": 10000},
+                        )
+                    except Exception as e:
+                        app.logger.warning(f"Managed-user sweep: section {section_key} for {title}: {e}")
+                        continue
+
+                    for item in (mc.get("Metadata") or []):
+                        rk = str(item.get("ratingKey") or "")
+                        if not rk:
+                            continue
+                        if (item.get("viewCount") or 0) <= 0:
+                            continue
+                        providers = parse_plex_guids(item.get("Guid") or [])
+                        if not providers:
+                            continue
+                        last_viewed = item.get("lastViewedAt")
+                        if not last_viewed:
+                            continue
+                        iso_ts = datetime.fromtimestamp(last_viewed, tz=timezone.utc).isoformat()
+                        for ptype, pid in providers.items():
+                            cur = db.execute(
+                                """INSERT OR IGNORE INTO plex_watch_events
+                                   (plex_account_id, provider_type, provider_id, item_type, event_type, updated_at, rating_key)
+                                   VALUES (?, ?, ?, ?, 'play', ?, ?)""",
+                                (local_id, ptype.lower(), str(pid), item_type, iso_ts, rk)
+                            )
+                            imported += cur.rowcount
+            db.commit()
+        finally:
+            db.close()
+
+        if imported:
+            app.logger.info(f"Managed-user sweep: imported {imported} new events")
+    except Exception as e:
+        app.logger.warning(f"Managed-user sweep error: {e}")
+    finally:
+        if MANAGED_USER_SWEEP_INTERVAL > 0:
+            t = threading.Timer(MANAGED_USER_SWEEP_INTERVAL, _managed_user_sweep)
+            t.daemon = True
+            t.start()
+
+
+if MANAGED_USER_SWEEP_INTERVAL > 0:
+    # Delay first run so init and the other sweeps settle first.
+    _mu_t = threading.Timer(60, _managed_user_sweep)
+    _mu_t.daemon = True
+    _mu_t.start()
 
 @app.route("/api/watch-summary/items")
 @login_required_api
