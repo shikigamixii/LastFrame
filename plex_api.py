@@ -124,9 +124,10 @@ def plex_tv_home_users():
 def plex_tv_switch_token_diag(home_user_id):
     """Try to mint a per-user auth token. Returns {'token','status','endpoint','body_preview'}.
 
-    Tries the v2 endpoint first (current Plex.tv) then falls back to the legacy
-    XML endpoint. body_preview is included on failure so callers can surface
-    what plex.tv actually said.
+    Tries the legacy XML endpoint first because the token it returns is a
+    long-lived user authentication token that the PMS itself accepts; the
+    v2 endpoint's authToken sometimes only authorises plex.tv API calls
+    and gets 401'd by the local server. Falls back to v2 if legacy fails.
     """
     from xml.etree import ElementTree as ET
     diag = {"token": None, "status": None, "endpoint": None, "body_preview": None}
@@ -134,29 +135,7 @@ def plex_tv_switch_token_diag(home_user_id):
         diag["body_preview"] = "no token or home_user_id"
         return diag
 
-    # 1) v2 (JSON). This is what current Plex clients (incl. python-plexapi) use.
-    try:
-        r = http_requests.post(
-            f"https://plex.tv/api/v2/home/users/{home_user_id}/switch",
-            headers=_plex_tv_headers(),
-            timeout=15,
-        )
-        diag["endpoint"] = "v2"
-        diag["status"] = r.status_code
-        if r.status_code < 400 and r.content:
-            try:
-                data = r.json()
-                tk = data.get("authToken") or data.get("authenticationToken")
-                if tk:
-                    diag["token"] = tk
-                    return diag
-            except ValueError:
-                pass
-        diag["body_preview"] = (r.text or "")[:300]
-    except Exception as e:
-        diag["body_preview"] = f"v2 request error: {e}"
-
-    # 2) Legacy XML fallback.
+    # 1) Legacy XML endpoint — returns the user's master auth token, usable against the PMS.
     try:
         r = http_requests.post(
             f"https://plex.tv/api/home/users/{home_user_id}/switch",
@@ -177,6 +156,29 @@ def plex_tv_switch_token_diag(home_user_id):
         diag["body_preview"] = (r.text or "")[:300]
     except Exception as e:
         diag["body_preview"] = f"legacy request error: {e}"
+
+    # 2) v2 JSON fallback. Some Plex.tv accounts get 401/404 on legacy and v2 is the
+    # only path that responds.
+    try:
+        r = http_requests.post(
+            f"https://plex.tv/api/v2/home/users/{home_user_id}/switch",
+            headers=_plex_tv_headers(),
+            timeout=15,
+        )
+        diag["endpoint"] = "v2"
+        diag["status"] = r.status_code
+        if r.status_code < 400 and r.content:
+            try:
+                data = r.json()
+                tk = data.get("authToken") or data.get("authenticationToken")
+                if tk:
+                    diag["token"] = tk
+                    return diag
+            except ValueError:
+                pass
+        diag["body_preview"] = (r.text or "")[:300]
+    except Exception as e:
+        diag["body_preview"] = f"v2 request error: {e}"
 
     return diag
 
