@@ -1,7 +1,5 @@
 # LastFrame (Plex)
 
-Built with Claude Code but there is no AI baked into this project.
-
 A self-hosted web dashboard for tracking and managing Plex watch history across multiple users. Browse your libraries, see per-user watch progress, filter by genre or completion status, and automatically delete watched media after a configurable grace period.
 
 ## Features
@@ -256,6 +254,23 @@ Webhooks let LastFrame record watch events in real time. Requires **Plex Pass**.
 2. Add a new webhook pointing to: `http://<your-server-ip>:PORT/api/webhook/plex?secret=<your_webhook_secret>`
 
 Without webhooks, LastFrame can still import existing watch history using **Settings → Import Plex History**.
+
+### Known limitation — managed (Plex Home) users
+
+Plex's `media.scrobble` webhook only fires for the server owner's Plex Pass
+account, so plays by managed (Plex Home) users wouldn't otherwise be visible.
+LastFrame fills that gap by polling `/status/sessions/history/all` in the
+background (`PLEX_HISTORY_POLL_INTERVAL`, default 300s), which captures any
+**actual playback** by managed users within one poll cycle.
+
+What is **not** captured: a managed user using **Mark as Watched** in the
+Plex UI *without playing the item*. Plex's PMS does not emit any event for
+that action, write it to `/status/sessions/history/all`, or expose it
+through the per-user APIs in a way that survives most setups (including
+PMSes hosted on seedboxes behind `.plex.direct`). Even Tautulli — which
+uses the PMS's own websocket — does not see these events. There is no
+known workaround inside Plex's API surface; the only reliable signal is
+the user actually playing the item far enough to scrobble (~90%).
 
 ---
 
