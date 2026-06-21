@@ -22,7 +22,7 @@ from plex_api import (
     plex_get, plex_delete, plex_get_raw, plex_get_with_token,
     plex_accounts, plex_all_accounts,
     plex_owner_id, _local_account_id, plex_sections, plex_genre_id,
-    plex_tv_home_users, plex_tv_switch_token,
+    plex_tv_home_users, plex_tv_switch_token, plex_tv_switch_token_diag,
     ts_to_iso, parse_plex_guids, get_item_providers,
     set_request_hook as _plex_set_request_hook,
 )
@@ -1406,7 +1406,11 @@ def _run_managed_user_sweep():
                 continue
             user_token = _get_managed_user_token(hu.get("id"))
             if not user_token:
-                entry["skipped_reason"] = "switch token mint failed"
+                # Bypass the cache and capture the raw plex.tv response so the
+                # debug endpoint surfaces *why* the mint failed.
+                diag = plex_tv_switch_token_diag(hu.get("id"))
+                entry["switch_diag"] = diag
+                entry["skipped_reason"] = f"switch token mint failed (status={diag.get('status')}, endpoint={diag.get('endpoint')})"
                 report["users"].append(entry)
                 continue
             entry["token_ok"] = True
