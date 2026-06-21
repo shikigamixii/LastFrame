@@ -1372,6 +1372,7 @@ def _run_managed_user_sweep():
         return report
 
     db = get_db()
+    first = True
     try:
         for hu in home_users:
             entry = {
@@ -1404,10 +1405,15 @@ def _run_managed_user_sweep():
                 entry["skipped_reason"] = "PIN-protected"
                 report["users"].append(entry)
                 continue
+            # plex.tv 429s aggressively if we mint several switch tokens in
+            # rapid succession. Space them out a little when we know the cache
+            # is cold (no token yet for this user).
+            if not first and hu.get("id") not in _managed_user_token_cache:
+                time.sleep(1.5)
+            first = False
+
             user_token = _get_managed_user_token(hu.get("id"))
             if not user_token:
-                # Bypass the cache and capture the raw plex.tv response so the
-                # debug endpoint surfaces *why* the mint failed.
                 diag = plex_tv_switch_token_diag(hu.get("id"))
                 entry["switch_diag"] = diag
                 entry["skipped_reason"] = f"switch token mint failed (status={diag.get('status')}, endpoint={diag.get('endpoint')})"
