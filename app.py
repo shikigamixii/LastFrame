@@ -1310,9 +1310,19 @@ if HISTORY_POLL_INTERVAL > 0:
 # _history_poll_sweep can pick those up. The only signal is viewCount on
 # /library/* responses, but viewCount is per-token — we have to query with
 # each managed user's own token. We mint those tokens on demand via
-# plex.tv's /api/home/users/<id>/switch. Set PLEX_MANAGED_USER_SWEEP_INTERVAL=0
-# to disable, e.g. if you have no Plex Home users.
-MANAGED_USER_SWEEP_INTERVAL = int(os.environ.get("PLEX_MANAGED_USER_SWEEP_INTERVAL", "300"))
+# plex.tv's /api/home/users/<id>/switch.
+#
+# DISABLED BY DEFAULT: in practice some PMS deployments (including PMS
+# hosted on seedboxes accessed via .plex.direct) reject the minted Home
+# tokens with 401, leaving the sweep with nothing to write. And even when
+# the sweep works, Plex's PMS doesn't emit any signal for managed-user
+# "Mark as Watched" (Tautulli confirms it can't see them either), so the
+# sweep is also the only path for that case. Set
+# PLEX_MANAGED_USER_SWEEP_INTERVAL to a positive value (e.g. 300) to
+# enable it for setups where the per-user tokens are accepted. The
+# /api/admin/debug-managed-sweep endpoint can run a single cycle
+# on demand regardless of this setting.
+MANAGED_USER_SWEEP_INTERVAL = int(os.environ.get("PLEX_MANAGED_USER_SWEEP_INTERVAL", "0"))
 
 _managed_user_token_cache = {}  # plex.tv user id -> (token, mint_monotonic_time)
 _MANAGED_TOKEN_TTL = 3600  # refresh hourly; switch tokens stay valid much longer in practice
