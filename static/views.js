@@ -700,7 +700,11 @@ function renderAutoDeleteBadge(adStatus, id, type='series'){
   const setterFn=type==='movie'?'setAutoDeleteMovie':'setAutoDeleteSeries';
   let label,style,nextEnabled,nextLabel,clearBtn='';
   if(ov===true){
-    label=`Auto-delete: ON (override)${graceNote}`;style='color:var(--green)';
+    if(globalOn){
+      label=`Auto-delete: ON (override)${graceNote}`;style='color:var(--green)';
+    } else {
+      label='Auto-delete: Paused (global off) — override saved';style='color:var(--text-muted)';
+    }
     nextEnabled=false;nextLabel=`Disable for this ${itemWord}`;
     clearBtn=`<button class="btn-cancel" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${id}',null)">Clear override</button>`;
   } else if(ov===false){
@@ -708,14 +712,18 @@ function renderAutoDeleteBadge(adStatus, id, type='series'){
     nextEnabled=true;nextLabel=`Enable for this ${itemWord}`;
     clearBtn=`<button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${id}',null)">Clear override</button>`;
   } else if(eff){
-    label=`Auto-delete: ON (library)${graceNote}`;style='color:var(--green)';
+    if(globalOn){
+      label=`Auto-delete: ON (library)${graceNote}`;style='color:var(--green)';
+    } else {
+      label='Auto-delete: Paused (global off) — library default';style='color:var(--text-muted)';
+    }
     nextEnabled=false;nextLabel=`Disable for this ${itemWord}`;
   } else {
     label=globalOn?'Auto-delete: OFF (library default)':'Auto-delete: OFF';
     style='color:var(--text-muted)';
     nextEnabled=true;nextLabel=`Enable for this ${itemWord}`;
   }
-  const sweepBtn=(ov===true||eff)?`<button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="runAutoDeleteSweep(this)">Run sweep now</button>`:'';
+  const sweepBtn=globalOn&&(ov===true||eff)?`<button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="runAutoDeleteSweep(this)">Run sweep now</button>`:'';
   return `<div style="margin-top:0.5rem;font-size:0.78rem;${style}">${label}
     <button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${id}',${nextEnabled})">${nextLabel}</button>${clearBtn}${sweepBtn}</div>`;
 }
