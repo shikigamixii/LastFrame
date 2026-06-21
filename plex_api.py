@@ -186,6 +186,28 @@ def plex_tv_switch_token(home_user_id):
     """Mint a per-user auth token. Returns the token string or None."""
     return plex_tv_switch_token_diag(home_user_id).get("token")
 
+def plex_refresh_access_tokens():
+    """Force the PMS to pull the latest authorized-users list from plex.tv.
+
+    Without this, freshly-minted per-user switch tokens are 401'd by the PMS
+    because its in-memory authorized-tokens list is stale. Returns the HTTP
+    status (or None on transport error) so callers can surface it.
+    """
+    token = get_plex_token()
+    url = get_plex_url()
+    if not token or not url:
+        return None
+    try:
+        r = http_requests.post(
+            f"{url}/myplex/refreshAccessTokens",
+            headers=PLEX_HEADERS,
+            params={"X-Plex-Token": token},
+            timeout=15,
+        )
+        return r.status_code
+    except Exception:
+        return None
+
 def plex_delete(path):
     r = http_requests.delete(f"{get_plex_url()}{path}", headers=PLEX_HEADERS,
                               params={"X-Plex-Token": get_plex_token()}, timeout=30)
