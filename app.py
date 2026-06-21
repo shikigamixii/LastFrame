@@ -23,6 +23,7 @@ from plex_api import (
     plex_accounts, plex_all_accounts,
     plex_owner_id, _local_account_id, plex_sections, plex_genre_id,
     plex_tv_home_users, plex_tv_switch_token, plex_tv_switch_token_diag,
+    plex_refresh_access_tokens,
     ts_to_iso, parse_plex_guids, get_item_providers,
     set_request_hook as _plex_set_request_hook,
 )
@@ -1336,11 +1337,16 @@ def _run_managed_user_sweep():
     Separated from the timer loop so /api/admin/debug-managed-sweep can call
     it synchronously and surface what each step is doing.
     """
-    report = {"users": [], "imported": 0, "skipped_reason": None}
+    report = {"users": [], "imported": 0, "skipped_reason": None, "refresh_status": None}
 
     if not get_plex_token() or not get_plex_url():
         report["skipped_reason"] = "no plex token or url"
         return report
+
+    # Make the PMS sync its authorized-tokens list from plex.tv before we
+    # start querying with per-user switch tokens, otherwise the PMS rejects
+    # newly-minted tokens with 401.
+    report["refresh_status"] = plex_refresh_access_tokens()
 
     try:
         home_users = plex_tv_home_users()
