@@ -277,7 +277,8 @@ function renderGridItems(items,libId,lib){
       const titleTip=names||(watcherIds.length?watcherIds.length+' watcher'+(watcherIds.length!==1?'s':''):'');
       badgeHtml=`<div class="${cls}" data-watcher-ids="${esc(watcherIds.join(','))}" title="${esc(titleTip)}">${label}</div>`;
     }
-    h+=`<div class="item-card" data-id="${s.id}" onclick="nav('/lib/${libId}/${pfx}/${s.id}')">
+    const overlayType=lib.type==="movies"?"movie":"series";
+    h+=`<div class="item-card" data-id="${s.id}" onclick="openItemOverlay('${libId}','${overlayType}','${s.id}')">
       <div class="checkbox-overlay"><input type="checkbox" class="grid-checkbox" data-id="${s.id}" ${isSelected?'checked':''} onclick="event.stopPropagation();toggleItemSelection('${s.id}',this.checked)"></div>
       ${badgeHtml}
       <div class="item-type-badge">${typeLabel}</div>
@@ -488,15 +489,100 @@ function renderAssignPanel(itemId,assignData,isSeries=true){
   h+='</div><div class="assign-actions"><button class="btn-save" onclick="saveAssign(\''+itemId+'\')">Save</button><button onclick="resetAssign(\''+itemId+'\')">Reset to All</button><span class="assign-status" id="assignStatus">Saved!</span></div></div>';
   return h;
 }
+function invalidateWatchSummaryCache(){_watchSummary=null;_watchSummaryLibId=null;_recentWatchSummary=null;}
 async function saveAssign(itemId){
   const chips=document.querySelectorAll("#assignUsers .assign-chip");
   const on=[];chips.forEach(c=>{if(c.classList.contains("on"))on.push(c.dataset.uid);});
   if(on.length===S.users.length){await api("/api/assignments/"+itemId,{method:"DELETE"});S.assignedIds=null;}
   else{await api("/api/assignments/"+itemId,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:on})});S.assignedIds=on;}
+  invalidateWatchSummaryCache();
   const st=$("#assignStatus");if(st){st.classList.add("show");setTimeout(()=>st.classList.remove("show"),2000);}
-  route();
+  await refreshAfterAssign();
 }
-async function resetAssign(itemId){await api("/api/assignments/"+itemId,{method:"DELETE"});S.assignedIds=null;const st=$("#assignStatus");if(st){st.classList.add("show");setTimeout(()=>st.classList.remove("show"),2000);}route();}
+async function resetAssign(itemId){
+  await api("/api/assignments/"+itemId,{method:"DELETE"});S.assignedIds=null;
+  invalidateWatchSummaryCache();
+  const st=$("#assignStatus");if(st){st.classList.add("show");setTimeout(()=>st.classList.remove("show"),2000);}
+  await refreshAfterAssign();
+}
+async function refreshAfterAssign(){
+  if(_itemOverlayState){
+    await renderItemOverlay();
+    if(_currentLibId&&S.lib)fetchWatchSummary(_currentLibId,S.lib.type);
+  } else {
+    route();
+  }
+}
+
+// ── Item Detail Overlay (opens from library grid) ─────────────────────
+let _itemOverlayState=null; // {libId, type:'movie'|'series', itemId}
+async function openItemOverlay(libId,type,itemId){
+  _itemOverlayState={libId,type,itemId};
+  const ov=document.getElementById("itemDetailOverlay");
+  if(!ov){nav('/lib/'+libId+'/'+(type==='movie'?'m':'s')+'/'+itemId);return;}
+  document.getElementById("itemDetailContent").innerHTML='<div class="loading">Loading</div>';
+  ov.classList.add("active");
+  document.body.style.overflow='hidden';
+  await renderItemOverlay();
+}
+function closeItemOverlay(){
+  const ov=document.getElementById("itemDetailOverlay");
+  if(ov)ov.classList.remove("active");
+  document.body.style.overflow='';
+  _itemOverlayState=null;
+}
+async function renderItemOverlay(){
+  if(!_itemOverlayState)return;
+  const ct=document.getElementById("itemDetailContent");
+  if(!ct)return;
+  const{libId,type,itemId}=_itemOverlayState;
+  try{
+    await ensureLib(libId);
+    if(type==='movie'){await ensureItem(itemId);ct.innerHTML=await _buildMovieDetailHtml(itemId);}
+    else{await ensureSeries(itemId);ct.innerHTML=await _buildSeriesDetailHtml(itemId);}
+  }catch(e){ct.innerHTML='<div class="empty-state">Error: '+esc(e.message)+'</div>';}
+}
+async function _buildMovieDetailHtml(movieId){
+  const it=S.items[movieId]||{name:"Movie"};
+  const[ws,assign,adStatus]=await Promise.all([
+    api("/api/watch-status/"+movieId),
+    api("/api/assignments/"+movieId),
+    api("/api/auto-delete/movie/"+movieId).catch(()=>null)
+  ]);
+  S.assignedIds=assign.mode==="custom"?assign.assigned:null;
+  let displayUsers=ws;if(assign.mode==="custom"&&assign.assigned.length){const a=new Set(assign.assigned);displayUsers=ws.filter(u=>a.has(u.userId));}
+  const allW=isWatchedByAssigned(ws,S.assignedIds);
+  let h=renderAssignPanel(movieId,assign,false);
+  h+='<div class="movie-detail"><div class="movie-detail-header"><div class="movie-detail-poster"><img src="/api/image/'+movieId+'?type=Primary&maxWidth=400" onerror="this.parentElement.innerHTML=\'🎬\'" alt=""></div><div class="movie-detail-info"><h2>'+esc(it.name)+(allW?'<span class="all-watched-tag">All Watched</span>':'')+'</h2>'+(it.year?'<div class="year">'+it.year+'</div>':'')+renderAutoDeleteBadge(adStatus,movieId,'movie')+'<div style="margin-top:1rem"><button class="btn-delete-bulk" onclick="deleteMovie(\''+movieId+'\')">Delete Movie</button></div></div></div><div class="movie-watch-list">';
+  for(const u of displayUsers)h+='<div class="movie-watch-item">'+badge(u)+'</div>';
+  h+='</div></div>';
+  return h;
+}
+async function _buildSeriesDetailHtml(seriesId){
+  const ser=S.series||{id:seriesId,name:"Series"};
+  const libId=_itemOverlayState?_itemOverlayState.libId:(S.lib&&S.lib.id);
+  const[seasons,assign,adStatus]=await Promise.all([
+    api("/api/seasons/"+seriesId),
+    api("/api/assignments/"+seriesId),
+    api("/api/auto-delete/series/"+seriesId).catch(()=>null)
+  ]);
+  S.assignedIds=assign.mode==="custom"?assign.assigned:null;
+  if(!seasons.length){return '<div class="empty-state">No seasons found.</div>';}
+  seasons.forEach(s=>{S.items[s.id]={name:s.name,type:"season",seriesId};});
+  const posterHtml=`<div style="display:flex; gap:1.5rem; margin-bottom:1.5rem; align-items:center;"><div style="width:120px; border-radius:8px; overflow:hidden; background:var(--bg-card); aspect-ratio:2/3; flex-shrink:0;"><img src="/api/image/${seriesId}?type=Primary&maxWidth=200" onerror="this.parentElement.innerHTML='📺'" style="width:100%; height:100%; object-fit:cover;"></div><div><h2 style="margin-bottom:0.25rem">${esc(cleanName(ser.name))}</h2><div class="lib-type">Series</div>${renderAutoDeleteBadge(adStatus,seriesId)}</div></div>`;
+  let h=renderAssignPanel(seriesId,assign,true)+posterHtml+'<div class="season-list">';
+  for(const s of seasons){
+    const completedUsers=s.completedUsers||0,totalUsers=s.totalAssignedUsers||S.users.length,percent=totalUsers?(completedUsers/totalUsers)*100:0;
+    let tooltipLines=[];if(s.userProgress&&s.userProgress.length){for(const up of s.userProgress){tooltipLines.push(`${up.userName}: ${up.playedCount}/${up.totalCount} ${up.completed?'✓':''}`);}}
+    const tooltipText=tooltipLines.join('\n');
+    h+=`<div class="season-item"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="season-item-name" onclick="navFromOverlay('/lib/${libId}/s/${seriesId}/${s.id}')">${esc(s.name)}</span><button class="btn-delete" onclick="deleteSeason('${s.id}','${seriesId}')">Delete</button></div><div style="margin-top:8px;" title="${esc(tooltipText)}"><div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;"><span>${completedUsers}/${totalUsers} users completed</span><span>${Math.round(percent)}%</span></div><div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;"><div style="width:${percent}%;background:var(--green);height:100%;border-radius:4px;"></div></div></div></div>`;
+  }
+  h+='</div>';
+  return h;
+}
+function navFromOverlay(hash){closeItemOverlay();nav(hash);}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&_itemOverlayState)closeItemOverlay();});
+window.addEventListener('hashchange',()=>{if(_itemOverlayState)closeItemOverlay();});
 
 // Movie detail
 async function viewMovie(movieId){
@@ -568,8 +654,8 @@ async function afterEpDelete(){if(!S.season)return route();const chk=await api("
 function deleteEpisode(id){const ep=S.episodes[id]||{name:id,index:0};openDeleteModal("Delete E"+String(ep.index).padStart(2,"0")+" - "+ep.name+"?",async()=>{await api("/api/delete/"+id,{method:"DELETE"});await afterEpDelete();});}
 function deleteSelected(){const ids=getChecked();if(!ids.length)return;const names=ids.map(id=>{const ep=S.episodes[id];return ep?"E"+String(ep.index).padStart(2,"0")+" - "+ep.name:id;});const preview=names.length<=5?names.map(n=>"• "+n).join("\n"):names.slice(0,5).map(n=>"• "+n).join("\n")+"\n...and "+(names.length-5)+" more";openDeleteModal("Delete "+ids.length+" episodes?\n\n"+preview,async()=>{await api("/api/delete-batch",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({itemIds:ids})});await afterEpDelete();});}
 function deleteAllWatched(){if(!S.season)return;const ids=Object.entries(S.episodes).filter(([,e])=>e.allWatched).map(([id])=>id);if(!ids.length)return;openDeleteModal("Delete "+ids.length+" episodes from "+S.season.name+" watched by "+(S.assignedIds?"assigned users":"all users")+"?",async()=>{for(const id of ids){try{await api("/api/delete/"+id,{method:"DELETE"});}catch(e){}}await afterEpDelete();});}
-function deleteSeason(seasonId,seriesId){const it=S.items[seasonId]||{name:"Season"};openDeleteModal("Delete "+it.name+" and all its episodes?",async()=>{await api("/api/delete/"+seasonId,{method:"DELETE"});route();});}
-function deleteMovie(movieId){const it=S.items[movieId]||{name:"Movie"};openDeleteModal("Delete "+it.name+"?",async()=>{await api("/api/delete/"+movieId,{method:"DELETE"});nav("/lib/"+S.lib.id);});}
+function deleteSeason(seasonId,seriesId){const it=S.items[seasonId]||{name:"Season"};openDeleteModal("Delete "+it.name+" and all its episodes?",async()=>{await api("/api/delete/"+seasonId,{method:"DELETE"});invalidateWatchSummaryCache();if(_itemOverlayState){await renderItemOverlay();if(_currentLibId&&S.lib)fetchWatchSummary(_currentLibId,S.lib.type);}else{route();}});}
+function deleteMovie(movieId){const it=S.items[movieId]||{name:"Movie"};openDeleteModal("Delete "+it.name+"?",async()=>{await api("/api/delete/"+movieId,{method:"DELETE"});invalidateWatchSummaryCache();if(_itemOverlayState){closeItemOverlay();route();}else{nav("/lib/"+S.lib.id);}});}
 
 // Episode detail
 async function viewEpisodeDetail(libId,seriesId,seasonId,episodeId){
@@ -615,7 +701,11 @@ function renderAutoDeleteBadge(adStatus, id, type='series'){
   const setterFn=type==='movie'?'setAutoDeleteMovie':'setAutoDeleteSeries';
   let label,style,nextEnabled,nextLabel,clearBtn='';
   if(ov===true){
-    label=`Auto-delete: ON (override)${graceNote}`;style='color:var(--green)';
+    if(globalOn){
+      label=`Auto-delete: ON (override)${graceNote}`;style='color:var(--green)';
+    } else {
+      label='Auto-delete: Paused (global off) — override saved';style='color:var(--text-muted)';
+    }
     nextEnabled=false;nextLabel=`Disable for this ${itemWord}`;
     clearBtn=`<button class="btn-cancel" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${id}',null)">Clear override</button>`;
   } else if(ov===false){
@@ -623,14 +713,18 @@ function renderAutoDeleteBadge(adStatus, id, type='series'){
     nextEnabled=true;nextLabel=`Enable for this ${itemWord}`;
     clearBtn=`<button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${id}',null)">Clear override</button>`;
   } else if(eff){
-    label=`Auto-delete: ON (library)${graceNote}`;style='color:var(--green)';
+    if(globalOn){
+      label=`Auto-delete: ON (library)${graceNote}`;style='color:var(--green)';
+    } else {
+      label='Auto-delete: Paused (global off) — library default';style='color:var(--text-muted)';
+    }
     nextEnabled=false;nextLabel=`Disable for this ${itemWord}`;
   } else {
     label=globalOn?'Auto-delete: OFF (library default)':'Auto-delete: OFF';
     style='color:var(--text-muted)';
     nextEnabled=true;nextLabel=`Enable for this ${itemWord}`;
   }
-  const sweepBtn=(ov===true||eff)?`<button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="runAutoDeleteSweep()">Run sweep now</button>`:'';
+  const sweepBtn=globalOn&&(ov===true||eff)?`<button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="runAutoDeleteSweep()">Run sweep now</button>`:'';
   return `<div style="margin-top:0.5rem;font-size:0.78rem;${style}">${label}
     <button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${id}',${nextEnabled})">${nextLabel}</button>${clearBtn}${sweepBtn}</div>`;
 }
@@ -639,14 +733,14 @@ async function setAutoDeleteSeries(seriesId,enabled){
   if(resp&&resp.global_enabled_was_off){
     alert('Auto-delete enabled for this show.\nGlobal auto-delete has also been turned on automatically.');
   }
-  route();
+  if(_itemOverlayState)await renderItemOverlay();else route();
 }
 async function setAutoDeleteMovie(movieId,enabled){
   const resp=await api('/api/auto-delete/movie/'+movieId,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});
   if(resp&&resp.global_enabled_was_off){
     alert('Auto-delete enabled for this movie.\nGlobal auto-delete has also been turned on automatically.');
   }
-  route();
+  if(_itemOverlayState)await renderItemOverlay();else route();
 }
 async function runAutoDeleteSweep(){
   try{
