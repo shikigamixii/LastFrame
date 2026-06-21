@@ -11,6 +11,23 @@ from config_store import load_config
 
 PLEX_HEADERS = {"Accept": "application/json"}
 
+# plex.tv (not the local PMS) requires every request to identify the calling
+# client. The listing endpoints tolerate the absence of these headers, but
+# /api/v2/home/users/<id>/switch (and most v2 endpoints) reject calls that
+# lack a stable X-Plex-Client-Identifier. We generate one on first use and
+# keep it constant for the process lifetime.
+import uuid as _uuid
+_CLIENT_ID = _uuid.uuid4().hex
+PLEX_TV_HEADERS = {
+    "Accept": "application/json",
+    "X-Plex-Product": "LastFrame",
+    "X-Plex-Version": "1.0",
+    "X-Plex-Client-Identifier": _CLIENT_ID,
+    "X-Plex-Platform": "Python",
+    "X-Plex-Device": "LastFrame Server",
+    "X-Plex-Device-Name": "LastFrame",
+}
+
 _request_hook = None
 
 def set_request_hook(fn):
@@ -68,19 +85,27 @@ def plex_get_with_token(path, token, params=None):
     except ValueError:
         return {}
 
+def _plex_tv_headers(extra=None):
+    h = dict(PLEX_TV_HEADERS)
+    tk = get_plex_token()
+    if tk:
+        h["X-Plex-Token"] = tk
+    if extra:
+        h.update(extra)
+    return h
+
 def plex_tv_home_users():
-    """Return [{'id','uuid','title','protected'}] for each Plex Home user.
+    """Return [{'id','uuid','title','protected','admin'}] for each Plex Home user.
 
     Talks to plex.tv (not the local PMS) because the Home roster lives in the
-    cloud. Plex's /api/home/users endpoint serves XML; we parse with stdlib.
+    cloud. The legacy /api/home/users endpoint serves XML; we parse with stdlib.
     """
     from xml.etree import ElementTree as ET
-    token = get_plex_token()
-    if not token:
+    if not get_plex_token():
         return []
     r = http_requests.get(
         "https://plex.tv/api/home/users",
-        headers={"X-Plex-Token": token, "Accept": "application/xml"},
+        headers=_plex_tv_headers({"Accept": "application/xml"}),
         timeout=15,
     )
     r.raise_for_status()
@@ -96,29 +121,68 @@ def plex_tv_home_users():
         })
     return out
 
-def plex_tv_switch_token(home_user_id):
-    """Mint a per-user auth token by hitting plex.tv's home/users/<id>/switch.
+def plex_tv_switch_token_diag(home_user_id):
+    """Try to mint a per-user auth token. Returns {'token','status','endpoint','body_preview'}.
 
-    Returns None if the user is PIN-protected or the call otherwise fails.
-    The minted token is bound to that user — feeding it to the local PMS
-    causes /library/* responses to reflect that user's view state.
+    Tries the v2 endpoint first (current Plex.tv) then falls back to the legacy
+    XML endpoint. body_preview is included on failure so callers can surface
+    what plex.tv actually said.
     """
     from xml.etree import ElementTree as ET
-    token = get_plex_token()
-    if not token or not home_user_id:
-        return None
-    r = http_requests.post(
-        f"https://plex.tv/api/home/users/{home_user_id}/switch",
-        headers={"X-Plex-Token": token, "Accept": "application/xml"},
-        timeout=15,
-    )
-    if r.status_code >= 400:
-        return None
+    diag = {"token": None, "status": None, "endpoint": None, "body_preview": None}
+    if not get_plex_token() or not home_user_id:
+        diag["body_preview"] = "no token or home_user_id"
+        return diag
+
+    # 1) v2 (JSON). This is what current Plex clients (incl. python-plexapi) use.
     try:
-        root = ET.fromstring(r.content)
-    except ET.ParseError:
-        return None
-    return root.attrib.get("authenticationToken") or root.attrib.get("authToken")
+        r = http_requests.post(
+            f"https://plex.tv/api/v2/home/users/{home_user_id}/switch",
+            headers=_plex_tv_headers(),
+            timeout=15,
+        )
+        diag["endpoint"] = "v2"
+        diag["status"] = r.status_code
+        if r.status_code < 400 and r.content:
+            try:
+                data = r.json()
+                tk = data.get("authToken") or data.get("authenticationToken")
+                if tk:
+                    diag["token"] = tk
+                    return diag
+            except ValueError:
+                pass
+        diag["body_preview"] = (r.text or "")[:300]
+    except Exception as e:
+        diag["body_preview"] = f"v2 request error: {e}"
+
+    # 2) Legacy XML fallback.
+    try:
+        r = http_requests.post(
+            f"https://plex.tv/api/home/users/{home_user_id}/switch",
+            headers=_plex_tv_headers({"Accept": "application/xml"}),
+            timeout=15,
+        )
+        diag["endpoint"] = "legacy"
+        diag["status"] = r.status_code
+        if r.status_code < 400 and r.content:
+            try:
+                root = ET.fromstring(r.content)
+                tk = root.attrib.get("authenticationToken") or root.attrib.get("authToken")
+                if tk:
+                    diag["token"] = tk
+                    return diag
+            except ET.ParseError:
+                pass
+        diag["body_preview"] = (r.text or "")[:300]
+    except Exception as e:
+        diag["body_preview"] = f"legacy request error: {e}"
+
+    return diag
+
+def plex_tv_switch_token(home_user_id):
+    """Mint a per-user auth token. Returns the token string or None."""
+    return plex_tv_switch_token_diag(home_user_id).get("token")
 
 def plex_delete(path):
     r = http_requests.delete(f"{get_plex_url()}{path}", headers=PLEX_HEADERS,
