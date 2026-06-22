@@ -1,7 +1,5 @@
 # LastFrame (Jellyfin)
 
-Built with Claude Code but there is no AI baked into this project.
-
 A self-hosted web dashboard for tracking and managing Jellyfin watch history across multiple users. Browse your libraries, see per-user watch progress, filter by genre or completion status, and automatically delete watched media after a configurable grace period.
 
 ## Features
@@ -245,6 +243,18 @@ echo "SESSION_COOKIE_SECURE=1" >> .env
 
 Leave it unset (or `0`) for HTTP access — otherwise browsers drop the session
 cookie and the setup wizard / login will fail CSRF validation.
+
+When you run behind a reverse proxy, also set `TRUSTED_PROXY_HOPS` to the
+number of proxies in front of the app (usually `1`) so the real client IP is
+read from `X-Forwarded-For` for the login rate limiter and audit log:
+
+```bash
+echo "TRUSTED_PROXY_HOPS=1" >> .env
+```
+
+Leave it unset (or `0`) for the default direct-HTTP setup. Trusting
+`X-Forwarded-For` without a proxy in front would let clients spoof their IP
+and bypass the login rate limiter.
 
 ---
 
