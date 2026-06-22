@@ -115,7 +115,7 @@ function renderRecentItems(items,type,lib,watchSummary){
       const cls=allWatched?'watch-count-badge complete':'watch-count-badge partial';
       const label=(allWatched?'✓ ':'')+ws.watched+'/'+ws.total;
       const titleTip=names||(watcherIds.length?watcherIds.length+' watcher'+(watcherIds.length!==1?'s':''):'');
-      badgeHtml=`<div class="${cls}" data-watcher-ids="${esc(watcherIds.join(','))}" title="${esc(titleTip)}">${label}</div>`;
+      badgeHtml=`<div class="${cls}" data-watcher-ids="${escAttr(watcherIds.join(','))}" title="${escAttr(titleTip)}">${label}</div>`;
     }
     return `<div class="item-card" style="width:148px" onclick="nav('${path}')">
       ${badgeHtml}
@@ -275,7 +275,7 @@ function renderGridItems(items,libId,lib){
       const cls=allWatched?'watch-count-badge complete':'watch-count-badge partial';
       const label=(allWatched?'✓ ':'')+ws.watched+'/'+ws.total;
       const titleTip=names||(watcherIds.length?watcherIds.length+' watcher'+(watcherIds.length!==1?'s':''):'');
-      badgeHtml=`<div class="${cls}" data-watcher-ids="${esc(watcherIds.join(','))}" title="${esc(titleTip)}">${label}</div>`;
+      badgeHtml=`<div class="${cls}" data-watcher-ids="${escAttr(watcherIds.join(','))}" title="${escAttr(titleTip)}">${label}</div>`;
     }
     const overlayType=lib.type==="movies"?"movie":"series";
     h+=`<div class="item-card" data-id="${s.id}" onclick="openItemOverlay('${libId}','${overlayType}','${s.id}')">
@@ -466,7 +466,7 @@ function renderGenreChips(genres,libId){
   if(!genres||!genres.length){container.innerHTML='';return;}
   let h=`<span class="genre-chip all-chip${!_activeGenre?' active':''}" data-genre="" data-libid="${libId}">All</span>`;
   for(const g of genres){
-    h+=`<span class="genre-chip${_activeGenre===g?' active':''}" data-genre="${esc(g)}" data-libid="${libId}">${esc(g)}</span>`;
+    h+=`<span class="genre-chip${_activeGenre===g?' active':''}" data-genre="${escAttr(g)}" data-libid="${libId}">${esc(g)}</span>`;
   }
   container.innerHTML=h;
   container.querySelectorAll('.genre-chip').forEach(el=>{
@@ -575,7 +575,7 @@ async function _buildSeriesDetailHtml(seriesId){
     const completedUsers=s.completedUsers||0,totalUsers=s.totalAssignedUsers||S.users.length,percent=totalUsers?(completedUsers/totalUsers)*100:0;
     let tooltipLines=[];if(s.userProgress&&s.userProgress.length){for(const up of s.userProgress){tooltipLines.push(`${up.userName}: ${up.playedCount}/${up.totalCount} ${up.completed?'✓':''}`);}}
     const tooltipText=tooltipLines.join('\n');
-    h+=`<div class="season-item"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="season-item-name" onclick="navFromOverlay('/lib/${libId}/s/${seriesId}/${s.id}')">${esc(s.name)}</span><button class="btn-delete" onclick="deleteSeason('${s.id}','${seriesId}')">Delete</button></div><div style="margin-top:8px;" title="${esc(tooltipText)}"><div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;"><span>${completedUsers}/${totalUsers} users completed</span><span>${Math.round(percent)}%</span></div><div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;"><div style="width:${percent}%;background:var(--green);height:100%;border-radius:4px;"></div></div></div></div>`;
+    h+=`<div class="season-item"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="season-item-name" onclick="navFromOverlay('/lib/${libId}/s/${seriesId}/${s.id}')">${esc(s.name)}</span><button class="btn-delete" onclick="deleteSeason('${s.id}','${seriesId}')">Delete</button></div><div style="margin-top:8px;" title="${escAttr(tooltipText)}"><div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;"><span>${completedUsers}/${totalUsers} users completed</span><span>${Math.round(percent)}%</span></div><div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;"><div style="width:${percent}%;background:var(--green);height:100%;border-radius:4px;"></div></div></div></div>`;
   }
   h+='</div>';
   return h;
@@ -615,7 +615,7 @@ async function viewSeasons(seriesId){
       const totalEp=s.totalEpisodes||0,completedUsers=s.completedUsers||0,totalUsers=s.totalAssignedUsers||S.users.length,percent=totalUsers?(completedUsers/totalUsers)*100:0;
       let tooltipLines=[];if(s.userProgress&&s.userProgress.length){for(const up of s.userProgress){tooltipLines.push(`${up.userName}: ${up.playedCount}/${up.totalCount} ${up.completed?'✓':''}`);}}
       const tooltipText=tooltipLines.join('\n');
-      h+=`<div class="season-item"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="season-item-name" onclick="nav('/lib/${lib.id}/s/${seriesId}/${s.id}')">${esc(s.name)}</span><button class="btn-delete" onclick="deleteSeason('${s.id}','${seriesId}')">Delete</button></div><div style="margin-top:8px;" title="${esc(tooltipText)}"><div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;"><span>${completedUsers}/${totalUsers} users completed</span><span>${Math.round(percent)}%</span></div><div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;"><div style="width:${percent}%;background:var(--green);height:100%;border-radius:4px;"></div></div></div></div>`;
+      h+=`<div class="season-item"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="season-item-name" onclick="nav('/lib/${lib.id}/s/${seriesId}/${s.id}')">${esc(s.name)}</span><button class="btn-delete" onclick="deleteSeason('${s.id}','${seriesId}')">Delete</button></div><div style="margin-top:8px;" title="${escAttr(tooltipText)}"><div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;"><span>${completedUsers}/${totalUsers} users completed</span><span>${Math.round(percent)}%</span></div><div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;"><div style="width:${percent}%;background:var(--green);height:100%;border-radius:4px;"></div></div></div></div>`;
     }
     h+='</div>';el.innerHTML=h;
   }catch(e){el.innerHTML='<div class="empty-state">Error: '+esc(e.message)+'</div>';}
@@ -628,7 +628,15 @@ async function viewEpisodes(seriesId,seasonId){
   crumbs([{label:"Libraries",hash:"/"},{label:lib.name,hash:"/lib/"+lib.id},{label:cleanName(ser.name),hash:"/lib/"+lib.id+"/s/"+seriesId},{label:cleanName(sea.name)}]);
   try{const[episodes,assign]=await Promise.all([api("/api/season-watch-status/"+seriesId+"/"+seasonId),api("/api/assignments/"+seriesId)]);
     S.assignedIds=assign.mode==="custom"?assign.assigned:null;
-    if(!episodes.length){try{await api("/api/delete/"+seasonId,{method:"DELETE"});}catch(e){}nav("/lib/"+lib.id+"/s/"+seriesId);return;}
+    if(!episodes.length){
+      // Do NOT auto-delete here. This is a read/navigation path, and a
+      // transient Jellyfin hiccup can return an empty list for a season that
+      // still has files on disk — deleting on that signal is irreversible.
+      el.innerHTML='<div class="empty-state">No episodes found in this season.'
+        +'<br><button class="btn-delete" style="margin-top:1rem" onclick="deleteSeason(\''+seasonId+'\',\''+seriesId+'\')">Delete empty season</button>'
+        +'<button class="btn-cancel" style="margin-top:1rem;margin-left:.5rem" onclick="nav(\'/lib/'+lib.id+'/s/'+seriesId+'\')">Back to series</button></div>';
+      return;
+    }
     S.episodes={};episodes.forEach(ep=>{S.episodes[ep.id]={name:ep.name,index:ep.indexNumber,allWatched:isWatchedByAssigned(ep.users,S.assignedIds)};});
     let uNames=[];if(assign.mode==="custom"&&assign.assigned.length){const assignedSet=new Set(assign.assigned);if(episodes[0]?.users){uNames=episodes[0].users.filter(u=>assignedSet.has(u.userId)).map(u=>u.userName);}}else{if(episodes[0]?.users)uNames=episodes[0].users.map(u=>u.userName);}
     const total=episodes.length,watchedAll=Object.values(S.episodes).filter(e=>e.allWatched).length;
