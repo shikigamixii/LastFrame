@@ -56,7 +56,16 @@ STATIC_VERSION = _static_version()
 def _inject_static_version():
     return {"static_v": STATIC_VERSION}
 
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+# Only trust X-Forwarded-* headers when a reverse proxy is actually in front.
+# On the documented direct-HTTP deployment there is no proxy, so blindly
+# trusting these headers would let any client spoof their source IP (by sending
+# their own X-Forwarded-For) and thereby bypass the per-IP login rate limiter
+# and forge audit-log entries. Default off; set TRUSTED_PROXY_HOPS to the
+# number of proxy hops (usually 1) when serving behind nginx/Caddy/Traefik.
+_proxy_hops = int(os.environ.get("TRUSTED_PROXY_HOPS", "0") or "0")
+if _proxy_hops > 0:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_proxy_hops, x_proto=_proxy_hops,
+                            x_host=_proxy_hops, x_prefix=_proxy_hops)
 
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 # Default off so plain-HTTP LAN deployments (the documented happy path) can
@@ -75,6 +84,15 @@ csrf = CSRFProtect(app)
 @app.errorhandler(CSRFError)
 def _csrf_error(e):
     return jsonify({"error": "CSRF token missing or invalid", "csrf_failed": True}), 400
+
+@app.after_request
+def _security_headers(resp):
+    # Cheap baseline hardening. DENY framing (the UI has one-click delete
+    # buttons, so clickjacking matters); stop MIME sniffing; trim referrers.
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    return resp
 
 limiter = Limiter(
     get_remote_address,
