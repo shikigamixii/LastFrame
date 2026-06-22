@@ -22,6 +22,11 @@ function fmtT(t){if(!t)return"";const s=Math.floor(t/1e7),h=Math.floor(s/3600),m
 function fmtD(iso){if(!iso)return"";const d=Math.floor((Date.now()-new Date(iso))/864e5);if(d===0)return"Today";if(d===1)return"Yesterday";if(d<7)return d+"d ago";if(d<30)return Math.floor(d/7)+"w ago";return new Date(iso).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});}
 function fmtTs(iso){if(!iso)return"";try{const tz=S.config&&S.config.timezone;return new Date(iso).toLocaleString("en-US",{timeZone:tz||undefined,month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"});}catch(e){return iso;}}
 function esc(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML;}
+// esc() is safe for element *content* but does NOT escape quotes, so it can't
+// be used inside HTML attribute values (a " in a media title/username would
+// break out of the attribute). Use escAttr() for anything interpolated into
+// an attribute: title="...", value="...", data-*="...".
+function escAttr(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function cleanName(s){return s.replace(/\s*\{[^}]+\}/g,'').trim();}
 function badge(u){
   if(u.played)return'<div><span class="watch-badge watched">✓ '+esc(u.userName)+'</span><div class="watch-meta">'+u.playCount+'× played'+(u.lastPlayedDate?' · '+fmtD(u.lastPlayedDate):'')+'</div></div>';
