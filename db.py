@@ -3,8 +3,15 @@ import sqlite3
 from config_store import DB_PATH
 
 def get_db():
-    db = sqlite3.connect(DB_PATH)
+    # Multiple request threads (gunicorn --threads) plus the background sweep
+    # timers all write to this DB. Without a busy timeout, concurrent writers
+    # raise "database is locked" immediately; WAL lets readers and a writer
+    # coexist. Both PRAGMAs are safe to set on every connection.
+    db = sqlite3.connect(DB_PATH, timeout=30)
     db.row_factory = sqlite3.Row
+    db.execute("PRAGMA busy_timeout=30000")
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA synchronous=NORMAL")
     return db
 
 def init_db():
