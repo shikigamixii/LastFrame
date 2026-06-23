@@ -77,7 +77,7 @@ async function openSettings(){
   h+='<div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1rem"><h3 style="margin-bottom:0.5rem">Plex Webhook</h3>';
   const whUrl=window.location.origin+"/api/webhook/plex";
   h+='<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">Add this URL in Plex → Settings → Webhooks (requires Plex Pass):</div>';
-  h+='<div style="display:flex;gap:0.4rem;margin-bottom:0.75rem"><input id="webhookUrlIn" readonly value="'+esc(whUrl)+'" style="flex:1;padding:0.4rem 0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:0.78rem;font-family:monospace"><button class="btn-settings" style="padding:0.35rem 0.7rem;font-size:0.8rem" onclick="copyWebhookUrl()">Copy</button></div>';
+  h+='<div style="display:flex;gap:0.4rem;margin-bottom:0.75rem"><input id="webhookUrlIn" readonly value="'+escAttr(whUrl)+'" style="flex:1;padding:0.4rem 0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:0.78rem;font-family:monospace"><button class="btn-settings" style="padding:0.35rem 0.7rem;font-size:0.8rem" onclick="copyWebhookUrl()">Copy</button></div>';
   h+='<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">Play events received: <strong>'+wh.play_events+'</strong>';
   if(wh.last_event_at)h+=' &nbsp;|&nbsp; Last event: <strong>'+esc(fmtTs(wh.last_event_at))+'</strong>';
   h+='</div>';
@@ -111,7 +111,7 @@ async function openSettings(){
   const cfgTz=cfg.timezone||'';
   h+='<div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1rem"><h3 style="margin-bottom:0.5rem">Display Timezone</h3>';
   h+='<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">IANA timezone for displaying timestamps (e.g. <code>America/New_York</code>, <code>Europe/London</code>). Leave blank to use browser timezone.</div>';
-  h+='<input id="cfgTimezone" type="text" value="'+esc(cfgTz)+'" placeholder="e.g. America/Los_Angeles" style="width:100%;padding:0.4rem 0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:0.85rem;font-family:monospace"></div>';
+  h+='<input id="cfgTimezone" type="text" value="'+escAttr(cfgTz)+'" placeholder="e.g. America/Los_Angeles" style="width:100%;padding:0.4rem 0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:0.85rem;font-family:monospace"></div>';
   $("#settingsBody").innerHTML=h;
 }
 function toggleAdMaster(el){
