@@ -275,15 +275,18 @@ def api_setup():
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit("5 per minute")
 def api_login():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     username = data.get("username", "")
     password = data.get("password", "")
+    # Strip control chars before logging so a newline-laced username can't forge
+    # extra audit-log lines (matches the sanitization used in api_setup).
+    safe_u = re.sub(r'[\x00-\x1f\x7f]', '', username or "")
     if verify_admin(username, password):
         session["logged_in"] = True
         session["username"] = username
-        app.logger.info(f"Successful login for '{username}' from {request.remote_addr}")
+        app.logger.info(f"Successful login for '{safe_u}' from {request.remote_addr}")
         return jsonify({"success": True})
-    app.logger.warning(f"Failed login attempt for '{username}' from {request.remote_addr}")
+    app.logger.warning(f"Failed login attempt for '{safe_u}' from {request.remote_addr}")
     return jsonify({"success": False, "error": "Invalid credentials"}), 401
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -1095,7 +1098,8 @@ def api_recent_movies():
             "lastPlayedDate": ts}
 
     out = sorted(result.values(), key=lambda x: x.get("lastPlayedDate") or "", reverse=True)
-    return jsonify(out[:10])
+    limit = request.args.get("limit", 10, type=int)
+    return jsonify(out[:limit])
 
 @app.route("/api/recent/episodes")
 @login_required_api
@@ -1150,7 +1154,8 @@ def api_recent_episodes():
             "lastPlayedDate": ts, "seriesId": series_id}
 
     out = sorted(result.values(), key=lambda x: x.get("lastPlayedDate") or "", reverse=True)
-    return jsonify(out[:10])
+    limit = request.args.get("limit", 10, type=int)
+    return jsonify(out[:limit])
 
 @app.route("/api/admin/backfill-history", methods=["POST"])
 @limiter.limit("2 per hour")
