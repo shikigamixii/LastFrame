@@ -125,6 +125,18 @@ init_db()
 # gunicorn is configured with a single worker to keep this from racing on SQLite.
 _auto_delete_sweep()
 
+# Surface unhandled exceptions in `docker compose logs` (audit.log already
+# captures them via Flask's logger, but stderr is what the container shows).
+@app.errorhandler(Exception)
+def _log_unhandled(e):
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return e
+    import traceback, sys
+    print(f"[500] {request.method} {request.path}: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+    traceback.print_exc(file=sys.stderr)
+    return jsonify({"error": "Internal server error", "type": type(e).__name__, "message": str(e)}), 500
+
 # ── Perf diagnostics ──────────────────────────────────────────────────
 # Per-request timing for the endpoints the home page calls on load.
 # Each request emits one stderr line so it shows up in `docker compose logs`.
@@ -264,15 +276,18 @@ def api_setup():
 @app.route("/api/auth/login", methods=["POST"])
 @limiter.limit("5 per minute")
 def api_login():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     username = data.get("username", "")
     password = data.get("password", "")
+    # Strip control chars before logging so a newline-laced username can't forge
+    # extra audit-log lines (matches the sanitization used in api_setup).
+    safe_u = re.sub(r'[\x00-\x1f\x7f]', '', username or "")
     if verify_admin(username, password):
         session["logged_in"] = True
         session["username"] = username
-        app.logger.info(f"Successful login for '{username}' from {request.remote_addr}")
+        app.logger.info(f"Successful login for '{safe_u}' from {request.remote_addr}")
         return jsonify({"success": True})
-    app.logger.warning(f"Failed login attempt for '{username}' from {request.remote_addr}")
+    app.logger.warning(f"Failed login attempt for '{safe_u}' from {request.remote_addr}")
     return jsonify({"success": False, "error": "Invalid credentials"}), 401
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -361,7 +376,7 @@ def api_webhook_plex():
     payload_str = request.form.get("payload")
     if payload_str:
         try: data = json.loads(payload_str)
-        except: return jsonify({"error": "invalid payload"}), 400
+        except Exception: return jsonify({"error": "invalid payload"}), 400
     else:
         data = request.get_json(silent=True) or {}
 
@@ -433,6 +448,36 @@ def api_webhook_events_status():
         "accounts": [{"plex_account_id": r["plex_account_id"], "play_events": r["cnt"]} for r in accounts]
     })
 
+@app.route("/api/webhook-events/for-item/<rating_key>")
+@login_required_api
+def api_webhook_events_for_item(rating_key):
+    rating_key = vid(rating_key)
+    db = get_db()
+    rows = db.execute(
+        "SELECT plex_account_id, provider_type, provider_id, item_type, event_type, updated_at, rating_key "
+        "FROM plex_watch_events WHERE rating_key=? ORDER BY updated_at DESC",
+        (rating_key,)).fetchall()
+    recent = db.execute(
+        "SELECT plex_account_id, item_type, rating_key, updated_at FROM plex_watch_events "
+        "ORDER BY updated_at DESC LIMIT 20").fetchall()
+    db.close()
+    name_by_id = {a["id"]: a["name"] for a in plex_accounts()}
+    return jsonify({
+        "rating_key": rating_key,
+        "events_for_item": [
+            {"plex_account_id": r["plex_account_id"], "account_name": name_by_id.get(r["plex_account_id"], "?"),
+             "provider_type": r["provider_type"], "provider_id": r["provider_id"],
+             "item_type": r["item_type"], "event_type": r["event_type"],
+             "updated_at": r["updated_at"], "rating_key": r["rating_key"]}
+            for r in rows
+        ],
+        "most_recent_overall": [
+            {"plex_account_id": r["plex_account_id"], "account_name": name_by_id.get(r["plex_account_id"], "?"),
+             "item_type": r["item_type"], "rating_key": r["rating_key"], "updated_at": r["updated_at"]}
+            for r in recent
+        ]
+    })
+
 @app.route("/api/webhook-events", methods=["DELETE"])
 @login_required_api
 def api_webhook_events_clear():
@@ -499,7 +544,7 @@ def api_series():
                 mc = plex_get(f"/library/metadata/{rid}")
                 m = (mc.get("Metadata") or [])[0]
                 items.append({"id": str(m["ratingKey"]), "name": m.get("title", ""), "year": m.get("year")})
-            except: continue
+            except Exception: continue
         return jsonify({"items": items, "totalCount": len(items), "page": 1, "pageSize": len(items), "isSearch": False})
 
     if not pid:
@@ -537,7 +582,7 @@ def api_movies():
                 mc = plex_get(f"/library/metadata/{rid}")
                 m = (mc.get("Metadata") or [])[0]
                 items.append({"id": str(m["ratingKey"]), "name": m.get("title", ""), "year": m.get("year")})
-            except: continue
+            except Exception: continue
         return jsonify({"items": items, "totalCount": len(items), "page": 1, "pageSize": len(items), "isSearch": False})
 
     if not pid:
@@ -748,7 +793,7 @@ def api_seasons(series_id):
         try:
             leaf_mc = plex_get(f"/library/metadata/{series_id}/allLeaves", {"includeGuids": 1})
             all_eps = leaf_mc.get("Metadata", [])
-        except:
+        except Exception:
             all_eps = []
 
         season_eps = {}
@@ -909,7 +954,7 @@ def api_watch_status(item_id):
                 leaf_mc = plex_get(f"/library/metadata/{item_id}/allLeaves", {"includeGuids": 1})
                 eps = [parse_plex_guids(e.get("Guid", [])) for e in leaf_mc.get("Metadata", [])]
                 eps = [p for p in eps if p]
-            except:
+            except Exception:
                 eps = []
             ep_played = pwe_get_played(db, all_ids, ["episode"])
             ep_played_ts = pwe_get_played_with_ts(db, all_ids, ["episode"])
@@ -968,7 +1013,7 @@ def api_watch_status(item_id):
         owner_played = view_count > 0
         owner_pct = 100.0 if owner_played else round(min(view_offset / duration_ms * 100, 99.9), 1)
         owner_date = ts_to_iso(i.get("lastViewedAt"))
-    except:
+    except Exception:
         owner_played, owner_pct, owner_date, view_count = False, 0, None, 0
     for acc in accounts:
         if acc["id"] == owner_id:
@@ -1029,7 +1074,7 @@ def api_recent_movies():
                     "year": i.get("year"),
                     "imageUrl": f"/api/image/{rid}?type=Primary&maxWidth=200",
                     "lastPlayedDate": ts_to_iso(lv)}
-        except: continue
+        except Exception: continue
 
     # All-user watch history via webhook events
     db = get_db()
@@ -1066,7 +1111,8 @@ def api_recent_movies():
             "lastPlayedDate": ts}
 
     out = sorted(result.values(), key=lambda x: x.get("lastPlayedDate") or "", reverse=True)
-    return jsonify(out[:10])
+    limit = request.args.get("limit", 10, type=int)
+    return jsonify(out[:limit])
 
 @app.route("/api/recent/episodes")
 @login_required_api
@@ -1096,7 +1142,7 @@ def api_recent_episodes():
                     "episodeNumber": i.get("index"),
                     "imageUrl": f"/api/image/{series_id or rid}?type=Primary&maxWidth=200",
                     "lastPlayedDate": ts_to_iso(lv), "seriesId": series_id}
-        except: continue
+        except Exception: continue
 
     # All-user watch history via webhook events
     db = get_db()
@@ -1136,7 +1182,8 @@ def api_recent_episodes():
             "lastPlayedDate": ts, "seriesId": series_id}
 
     out = sorted(result.values(), key=lambda x: x.get("lastPlayedDate") or "", reverse=True)
-    return jsonify(out[:10])
+    limit = request.args.get("limit", 10, type=int)
+    return jsonify(out[:limit])
 
 def _import_plex_history(max_pages=None):
     """Pull play events from Plex's session history into plex_watch_events.
@@ -2098,7 +2145,7 @@ def api_check_season_empty(series_id, season_id):
         mc = plex_get(f"/library/metadata/{season_id}/children")
         episodes = [i for i in mc.get("Metadata", []) if i.get("type") == "episode"]
         return jsonify({"empty": len(episodes) == 0})
-    except: return jsonify({"empty": False})
+    except Exception: return jsonify({"empty": False})
 
 @app.route("/api/image/<item_id>")
 @limiter.limit("600 per minute")
@@ -2120,7 +2167,7 @@ def proxy_image(item_id):
                           {"width": w, "height": h, "minSize": 1, "upscale": 1, "url": thumb})
         return Response(r.iter_content(8192), content_type=r.headers.get("Content-Type", "image/jpeg"),
                         headers={"Cache-Control": "public, max-age=86400"})
-    except: return Response(status=404)
+    except Exception: return Response(status=404)
 
 if __name__ == "__main__":
     if os.path.exists(CONFIG_PATH):
