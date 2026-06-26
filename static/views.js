@@ -154,12 +154,10 @@ async function viewLibraries(){
     }
     html+=`<div id="activitySection">${renderActivityHtml(activity)}</div>`;
     if(recentMovies.length){
-      const seeAll=moviesLib?`<a class="section-see-all" onclick="nav('/lib/${moviesLib.id}')">See All →</a>`:'';
-      html+=`<div style="margin-bottom:2rem"><div class="section-header"><h3>Recently Watched Movies</h3>${seeAll}</div><div id="recentMoviesRow" class="recent-row">${renderRecentItems(recentMovies,'movie',moviesLib,_recentWatchSummary)}</div></div>`;
+      html+=`<div style="margin-bottom:2rem"><div class="section-header"><h3>Recently Watched Movies</h3><a class="section-see-all" onclick="nav('/recent/movies')">See All →</a></div><div id="recentMoviesRow" class="recent-row">${renderRecentItems(recentMovies,'movie',moviesLib,_recentWatchSummary)}</div></div>`;
     }
     if(recentEpisodes.length){
-      const seeAll=showsLib?`<a class="section-see-all" onclick="nav('/lib/${showsLib.id}')">See All →</a>`:'';
-      html+=`<div style="margin-bottom:2rem"><div class="section-header"><h3>Recently Watched Episodes</h3>${seeAll}</div><div id="recentEpisodesRow" class="recent-row">${renderRecentItems(recentEpisodes,'episode',showsLib,_recentWatchSummary)}</div></div>`;
+      html+=`<div style="margin-bottom:2rem"><div class="section-header"><h3>Recently Watched Episodes</h3><a class="section-see-all" onclick="nav('/recent/episodes')">See All →</a></div><div id="recentEpisodesRow" class="recent-row">${renderRecentItems(recentEpisodes,'episode',showsLib,_recentWatchSummary)}</div></div>`;
     }
     html+='</div>';
 
@@ -167,6 +165,30 @@ async function viewLibraries(){
     vis.forEach(l=>{S.items[l.id]={name:l.name,type:l.type};});
     startHomePolling();
   }catch(e){el.innerHTML='<div class="empty-state">Failed to connect.<br><small>'+esc(e.message)+'</small></div>';}
+}
+
+// Recently Watched All page
+async function viewRecentAll(type){
+  stopHomePolling();
+  const isMovies=type==='movies';
+  const title=isMovies?'Recently Watched Movies':'Recently Watched Episodes';
+  const el=$el();el.innerHTML='<div class="loading">Loading</div>';
+  crumbs([{label:'Home',hash:'/'},{label:title}]);
+  try{
+    const items=await api(`/api/recent/${type}?limit=100`).catch(()=>[]);
+    if(!S.libraries.length)S.libraries=await api("/api/libraries").catch(()=>[]);
+    const moviesLib=S.libraries.find(l=>l.type==='movies');
+    const showsLib=S.libraries.find(l=>l.type==='tvshows');
+    const lib=isMovies?moviesLib:showsLib;
+    const itemType=isMovies?'movie':'episode';
+    const ws=await fetchRecentSummary(isMovies?items:[],isMovies?[]:items);
+    if(!items.length){
+      el.innerHTML='<div class="empty-state">No recently watched items found.</div>';
+      return;
+    }
+    const cardsHtml=renderRecentItems(items,itemType,lib,ws);
+    el.innerHTML=`<h2 style="margin-bottom:1.25rem">${esc(title)}</h2><div class="recent-row" style="flex-wrap:wrap">${cardsHtml}</div>`;
+  }catch(e){el.innerHTML='<div class="empty-state">Failed to load.<br><small>'+esc(e.message)+'</small></div>';}
 }
 
 // Global search (home page)
