@@ -40,6 +40,7 @@ from auto_delete import (
     is_auto_delete_active, _get_enabled_since, _auto_delete_candidate,
     _maybe_auto_delete, _run_sweep, _auto_delete_sweep,
 )
+import recently_added
 
 app = Flask(__name__)
 
@@ -124,6 +125,30 @@ init_db()
 # Kick off the auto-delete sweep timer at import time. Runs once per process —
 # gunicorn is configured with a single worker to keep this from racing on SQLite.
 _auto_delete_sweep()
+
+# Discovery sweep for the Recently Added list. Records newly-added titles so the
+# list is populated without manual action. Set RECENTLY_ADDED_SWEEP_INTERVAL=0
+# to disable. First run is delayed so init_db and Plex config settle first.
+RECENTLY_ADDED_SWEEP_INTERVAL = int(os.environ.get("RECENTLY_ADDED_SWEEP_INTERVAL", "1800"))
+
+def _recently_added_sweep():
+    try:
+        if get_plex_token() and get_plex_url():
+            added = recently_added.discover()
+            if added:
+                app.logger.info(f"Recently-added sweep: recorded {added} new title(s)")
+    except Exception as e:
+        app.logger.warning(f"Recently-added sweep error: {e}")
+    finally:
+        if RECENTLY_ADDED_SWEEP_INTERVAL > 0:
+            t = threading.Timer(RECENTLY_ADDED_SWEEP_INTERVAL, _recently_added_sweep)
+            t.daemon = True
+            t.start()
+
+if RECENTLY_ADDED_SWEEP_INTERVAL > 0:
+    _ra_t = threading.Timer(20, _recently_added_sweep)
+    _ra_t.daemon = True
+    _ra_t.start()
 
 # Surface unhandled exceptions in `docker compose logs` (audit.log already
 # captures them via Flask's logger, but stderr is what the container shows).
@@ -357,6 +382,12 @@ def api_save_config():
         cfg["auto_delete_min_delay_minutes"] = max(0, int(incoming["auto_delete_min_delay_minutes"] or 0))
     if "timezone" in incoming:
         cfg["timezone"] = (incoming["timezone"] or "").strip()
+    if "recently_added_window_days" in incoming:
+        try:
+            days = int(incoming["recently_added_window_days"])
+        except (TypeError, ValueError):
+            days = recently_added.DEFAULT_WINDOW_DAYS
+        cfg["recently_added_window_days"] = max(1, days)
     save_config(cfg)
     return jsonify({"success": True})
 
@@ -1764,6 +1795,15 @@ def api_get_assignments(item_id):
     if assigned is None: return jsonify({"assigned": [], "mode": "all"})
     return jsonify({"assigned": list(assigned), "mode": "custom"})
 
+@app.route("/api/recent/added")
+@login_required_api
+def api_recent_added():
+    try:
+        limit = min(500, max(1, int(request.args.get("limit", "60"))))
+    except (ValueError, TypeError):
+        limit = 60
+    return jsonify(recently_added.get_recent(limit=limit))
+
 @app.route("/api/assignments/<item_id>", methods=["POST"])
 @login_required_api
 def api_set_assignments(item_id):
@@ -1772,6 +1812,7 @@ def api_set_assignments(item_id):
     user_ids = [str(u) for u in user_ids if _ID_RE.match(str(u))]
     if not set_assignment_by_provider(item_id, user_ids):
         set_assignment_by_item_id(item_id, user_ids)
+    recently_added.mark_handled(item_id)
     return jsonify({"success": True})
 
 @app.route("/api/assignments/<item_id>", methods=["DELETE"])
@@ -1780,6 +1821,7 @@ def api_delete_assignments(item_id):
     item_id = vid(item_id)
     delete_assignment_by_provider(item_id)
     delete_assignment_by_item_id(item_id)
+    recently_added.mark_handled(item_id)
     return jsonify({"success": True})
 
 @app.route("/api/assignments/bulk", methods=["POST"])
@@ -1799,6 +1841,7 @@ def api_assignments_bulk():
         try:
             if not set_assignment_by_provider(item_id, user_ids):
                 set_assignment_by_item_id(item_id, user_ids)
+            recently_added.mark_handled(item_id)
             success_count += 1
             app.logger.info(f"Bulk assigned users to {item_id} from {request.remote_addr}")
         except Exception as e:
