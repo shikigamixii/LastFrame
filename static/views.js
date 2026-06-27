@@ -131,9 +131,10 @@ async function viewLibraries(){
   stopHomePolling();
   const el=$el();el.innerHTML='<div class="loading">Loading</div>';crumbs([]);
   try{
-    const[users,libs,recentMovies,recentEpisodes,activity,lastUpdate]=await Promise.all([
+    const[users,libs,recentMovies,recentEpisodes,recentAdded,activity,lastUpdate]=await Promise.all([
       api("/api/users"),api("/api/libraries"),
       api("/api/recent/movies").catch(()=>[]),api("/api/recent/episodes").catch(()=>[]),
+      api("/api/recent/added?limit=30").catch(()=>[]),
       api("/api/activity").catch(()=>[]),
       api("/api/events/last-update").catch(()=>({last_at:null}))
     ]);
@@ -153,6 +154,9 @@ async function viewLibraries(){
       html+='<div class="empty-state">No monitored libraries. Click ⚙ Settings to configure.</div>';
     }
     html+=`<div id="activitySection">${renderActivityHtml(activity)}</div>`;
+    if(recentAdded.length){
+      html+=`<div style="margin-bottom:2rem"><div class="section-header"><h3>Recently Added</h3><a class="section-see-all" onclick="nav('/recently-added')">See All →</a></div><div id="recentlyAddedRow" class="recent-row">${renderRecentlyAddedItems(recentAdded)}</div></div>`;
+    }
     if(recentMovies.length){
       html+=`<div style="margin-bottom:2rem"><div class="section-header"><h3>Recently Watched Movies</h3><a class="section-see-all" onclick="nav('/recent/movies')">See All →</a></div><div id="recentMoviesRow" class="recent-row">${renderRecentItems(recentMovies,'movie',moviesLib,_recentWatchSummary)}</div></div>`;
     }
@@ -188,6 +192,45 @@ async function viewRecentAll(type){
     }
     const cardsHtml=renderRecentItems(items,itemType,lib,ws);
     el.innerHTML=`<h2 style="margin-bottom:1.25rem">${esc(title)}</h2><div class="recent-row" style="flex-wrap:wrap">${cardsHtml}</div>`;
+  }catch(e){el.innerHTML='<div class="empty-state">Failed to load.<br><small>'+esc(e.message)+'</small></div>';}
+}
+
+// ── Recently Added (triage inbox for newly added movies & series) ──────
+function renderRecentlyAddedItems(items){
+  if(!items||!items.length)return '<div class="empty-state">Nothing new right now. Newly added movies and TV series will appear here.</div>';
+  return items.map(item=>{
+    const typeLabel=item.type==='movie'?'MOVIE':'TV';
+    return `<div class="item-card" style="width:148px" onclick="openItemOverlay('${item.libId}','${item.type}','${item.id}')">
+      <div class="item-type-badge">${typeLabel}</div>
+      <img class="item-poster" src="/api/image/${item.id}?type=Primary&maxWidth=300" loading="lazy" onerror="this.style.display='none'">
+      <div class="item-overlay"><div class="item-overlay-title">${esc(cleanName(item.name||''))}</div>${item.year?`<div class="item-overlay-year">${item.year}</div>`:''}</div>
+    </div>`;
+  }).join('');
+}
+// Re-fetch and re-render the list after an assignment is saved, so the title
+// just triaged drops off without a full reload. No-op when neither view is open.
+async function refreshRecentlyAddedRow(){
+  const row=document.getElementById("recentlyAddedRow");
+  const grid=document.getElementById("recentlyAddedGrid");
+  if(!row&&!grid)return;
+  try{
+    const items=await api("/api/recent/added?limit="+(grid?200:30)).catch(()=>[]);
+    if(row)row.innerHTML=renderRecentlyAddedItems(items);
+    if(grid)grid.innerHTML=renderRecentlyAddedItems(items);
+  }catch(e){}
+}
+// Recently Added "See All" page
+async function viewRecentlyAdded(){
+  stopHomePolling();
+  const el=$el();el.innerHTML='<div class="loading">Loading</div>';
+  crumbs([{label:'Home',hash:'/'},{label:'Recently Added'}]);
+  try{
+    if(!S.libraries.length)S.libraries=await api("/api/libraries").catch(()=>[]);
+    if(!S.users.length)S.users=await api("/api/users").catch(()=>[]);
+    const items=await api("/api/recent/added?limit=200").catch(()=>[]);
+    el.innerHTML=`<h2 style="margin-bottom:0.4rem">Recently Added</h2>`
+      +`<div class="assign-desc" style="margin-bottom:1.25rem">Newly added movies and TV series. Open a title to assign users — saving removes it from this list. Items also age off after the configured window.</div>`
+      +`<div id="recentlyAddedGrid" class="recent-row" style="flex-wrap:wrap">${renderRecentlyAddedItems(items)}</div>`;
   }catch(e){el.innerHTML='<div class="empty-state">Failed to load.<br><small>'+esc(e.message)+'</small></div>';}
 }
 
@@ -528,6 +571,7 @@ async function resetAssign(itemId){
   await refreshAfterAssign();
 }
 async function refreshAfterAssign(){
+  refreshRecentlyAddedRow();
   if(_itemOverlayState){
     await renderItemOverlay();
     if(_currentLibId&&S.lib)fetchWatchSummary(_currentLibId,S.lib.type);
