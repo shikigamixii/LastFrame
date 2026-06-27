@@ -9,6 +9,12 @@ import requests as http_requests
 
 from config_store import load_config
 
+# Reuse one connection pool for all Jellyfin calls. The server can be remote
+# over TLS, so a fresh TCP+TLS handshake per request adds latency; a shared
+# Session keeps connections alive. requests.Session is safe to share across
+# threads for issuing requests.
+_session = http_requests.Session()
+
 _request_hook = None
 
 def set_request_hook(fn):
@@ -34,7 +40,7 @@ def _jf_headers():
 def jellyfin_get(path, params=None):
     t0 = time.monotonic()
     try:
-        r = http_requests.get(f"{get_jellyfin_url()}{path}", headers=_jf_headers(), params=params or {}, timeout=(5, 20))
+        r = _session.get(f"{get_jellyfin_url()}{path}", headers=_jf_headers(), params=params or {}, timeout=(5, 20))
         r.raise_for_status()
         # Jellyfin can occasionally return HTTP 200 with an empty body during
         # a connection stall; treat that as "no data" rather than crashing on r.json().
@@ -50,7 +56,7 @@ def jellyfin_get(path, params=None):
             except Exception: pass
 
 def jellyfin_delete(item_id):
-    r = http_requests.delete(f"{get_jellyfin_url()}/Items/{item_id}", headers=_jf_headers(), timeout=30)
+    r = _session.delete(f"{get_jellyfin_url()}/Items/{item_id}", headers=_jf_headers(), timeout=30)
     r.raise_for_status()
     return r
 
