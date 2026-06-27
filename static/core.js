@@ -46,6 +46,7 @@ function renderSidebar(){
   if(!nav)return;
   const hash=location.hash||'#/';
   let h=`<div class="sidebar-nav-item${hash==='#/'||!hash?' active':''}" onclick="nav('/')"><span class="nav-icon">⌂</span><span class="nav-label">Home</span></div>`;
+  h+=`<div class="sidebar-nav-item${hash.startsWith('#/recently-added')?' active':''}" onclick="nav('/recently-added')"><span class="nav-icon">✨</span><span class="nav-label">Recently Added</span></div>`;
   const vis=(S.libraries||[]).filter(l=>l.monitored);
   for(const lib of vis){
     const libHash='#/lib/'+lib.id;
@@ -65,6 +66,7 @@ function nav(hash){closeSidebar();history.pushState(null,'','#'+hash);renderSide
 async function route(){
   const h=(location.hash||'#/').slice(1),p=h.split('/').filter(Boolean);
   if(!p.length)return viewLibraries();
+  if(p[0]==='recently-added')return viewRecentlyAdded();
   if(p[0]==='recent'&&p[1])return viewRecentAll(p[1]);
   if(p[0]==='lib'&&p[1]){
     await ensureLib(p[1]);
