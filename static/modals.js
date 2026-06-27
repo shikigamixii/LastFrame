@@ -108,6 +108,10 @@ async function openSettings(){
   h+='<div style="font-size:0.82rem;font-weight:500;margin-bottom:0.4rem">Libraries to auto-delete from:</div>';
   for(const l of libs){const on=adLibs.includes(l.id)||adLibs.includes(String(l.id));h+='<div class="lib-toggle"><div><div class="lib-toggle-name">'+esc(l.name)+'</div><div class="lib-toggle-type">'+(l.type==="tvshows"?"TV Shows":"Movies")+'</div></div><div class="toggle-switch ad-lib-toggle '+(on?"on":"")+'" data-lib-id="'+l.id+'" onclick="this.classList.toggle(\'on\')"></div></div>';}
   h+='</div></div>';
+  const raWindow=cfg.recently_added_window_days!=null?cfg.recently_added_window_days:30;
+  h+='<div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1rem"><h3 style="margin-bottom:0.5rem">Recently Added</h3>';
+  h+='<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">How many days a newly added movie or TV series stays on the Recently Added list before it ages off. Assigning users to a title also removes it.</div>';
+  h+='<div style="display:flex;align-items:center;gap:0.6rem"><label style="font-size:0.85rem;white-space:nowrap">Window (days):</label><input id="raWindowDays" type="number" min="1" max="365" value="'+raWindow+'" style="width:70px;padding:0.25rem 0.4rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:5px;color:var(--text-primary);font-size:0.85rem"></div></div>';
   const cfgTz=cfg.timezone||'';
   h+='<div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1rem"><h3 style="margin-bottom:0.5rem">Display Timezone</h3>';
   h+='<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">IANA timezone for displaying timestamps (e.g. <code>America/New_York</code>, <code>Europe/London</code>). Leave blank to use browser timezone.</div>';
@@ -153,9 +157,11 @@ async function saveSettings(){
   const adMinDelay=adMinDelayEl?Math.max(0,parseInt(adMinDelayEl.value)||0):30;
   const tzEl=document.getElementById("cfgTimezone");
   const tz=tzEl?tzEl.value.trim():"";
+  const raWinEl=document.getElementById("raWindowDays");
+  const raWin=raWinEl?Math.max(1,parseInt(raWinEl.value)||30):30;
   const cfg={monitored_libraries:en,show_all_libraries:en.length===ts.length,
     auto_delete_enabled:adEnabled,auto_delete_libraries:adLibs,auto_delete_grace_days:adGrace,
-    auto_delete_min_delay_minutes:adMinDelay,timezone:tz};
+    auto_delete_min_delay_minutes:adMinDelay,timezone:tz,recently_added_window_days:raWin};
   await api("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)});
   S.config=cfg;S.libraries=[];closeSettings();nav('/');
 }
