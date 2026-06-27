@@ -74,7 +74,7 @@ def pwe_resolve_rating_keys(db, sections, item_type, missing):
                         key = (ptype_raw.lower(), pid)
                         if key in missing and key not in found:
                             found[key] = rk
-        except: continue
+        except Exception: continue
     for (ptype, pid), rk in found.items():
         db.execute("""UPDATE plex_watch_events SET rating_key=?
                       WHERE provider_type=? AND provider_id=? AND item_type=? AND rating_key=''""",
