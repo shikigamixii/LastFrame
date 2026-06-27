@@ -45,4 +45,21 @@ def init_db():
         db.execute("ALTER TABLE auto_delete_overrides ADD COLUMN enabled_at TEXT")
     except Exception:
         pass  # column already exists
+    # Recently-added triage list. first_seen is written once (INSERT OR IGNORE)
+    # and never updated, so a quality upgrade or new episode — both of which
+    # bump Jellyfin's own DateCreated — can't resurface a title already recorded
+    # here. Keyed by provider id (like assignments_by_provider) so rows survive
+    # item-id changes; items with no provider id fall back to a RatingKey key.
+    db.execute("""CREATE TABLE IF NOT EXISTS recently_added (
+        provider_type TEXT NOT NULL,
+        provider_id   TEXT NOT NULL,
+        item_type     TEXT NOT NULL,
+        library_id    TEXT NOT NULL DEFAULT '',
+        rating_key    TEXT NOT NULL DEFAULT '',
+        title         TEXT NOT NULL DEFAULT '',
+        year          INTEGER,
+        first_seen    TEXT NOT NULL,
+        handled       INTEGER NOT NULL DEFAULT 0,
+        handled_at    TEXT,
+        PRIMARY KEY (provider_type, provider_id))""")
     db.commit(); db.close()
