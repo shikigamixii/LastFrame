@@ -9,6 +9,12 @@ import requests as http_requests
 
 from config_store import load_config
 
+# Reuse one connection pool for all Plex/plex.tv calls. The PMS is often remote
+# (.plex.direct over TLS), so a fresh TCP+TLS handshake per request adds real
+# latency; a shared Session keeps connections alive. requests.Session is safe
+# to share across threads for issuing requests.
+_session = http_requests.Session()
+
 PLEX_HEADERS = {"Accept": "application/json"}
 
 # plex.tv (not the local PMS) requires every request to identify the calling
@@ -52,7 +58,7 @@ def plex_get(path, params=None):
     if params: p.update(params)
     t0 = time.monotonic()
     try:
-        r = http_requests.get(f"{get_plex_url()}{path}", headers=PLEX_HEADERS, params=p, timeout=(5, 20))
+        r = _session.get(f"{get_plex_url()}{path}", headers=PLEX_HEADERS, params=p, timeout=(5, 20))
         r.raise_for_status()
         # Remote .plex.direct hosts occasionally return HTTP 200 with an empty body
         # after a stall; treat that as "no data" rather than crashing on r.json().
@@ -76,7 +82,7 @@ def plex_get_with_token(path, token, params=None):
     """
     p = {"X-Plex-Token": token}
     if params: p.update(params)
-    r = http_requests.get(f"{get_plex_url()}{path}", headers=PLEX_HEADERS, params=p, timeout=(5, 20))
+    r = _session.get(f"{get_plex_url()}{path}", headers=PLEX_HEADERS, params=p, timeout=(5, 20))
     r.raise_for_status()
     if not r.content:
         return {}
@@ -103,7 +109,7 @@ def plex_tv_home_users():
     from xml.etree import ElementTree as ET
     if not get_plex_token():
         return []
-    r = http_requests.get(
+    r = _session.get(
         "https://plex.tv/api/home/users",
         headers=_plex_tv_headers({"Accept": "application/xml"}),
         timeout=15,
@@ -137,7 +143,7 @@ def plex_tv_switch_token_diag(home_user_id):
 
     # 1) Legacy XML endpoint — returns the user's master auth token, usable against the PMS.
     try:
-        r = http_requests.post(
+        r = _session.post(
             f"https://plex.tv/api/home/users/{home_user_id}/switch",
             headers=_plex_tv_headers({"Accept": "application/xml"}),
             timeout=15,
@@ -160,7 +166,7 @@ def plex_tv_switch_token_diag(home_user_id):
     # 2) v2 JSON fallback. Some Plex.tv accounts get 401/404 on legacy and v2 is the
     # only path that responds.
     try:
-        r = http_requests.post(
+        r = _session.post(
             f"https://plex.tv/api/v2/home/users/{home_user_id}/switch",
             headers=_plex_tv_headers(),
             timeout=15,
@@ -198,7 +204,7 @@ def plex_refresh_access_tokens():
     if not token or not url:
         return None
     try:
-        r = http_requests.post(
+        r = _session.post(
             f"{url}/myplex/refreshAccessTokens",
             headers=PLEX_HEADERS,
             params={"X-Plex-Token": token},
@@ -209,7 +215,7 @@ def plex_refresh_access_tokens():
         return None
 
 def plex_delete(path):
-    r = http_requests.delete(f"{get_plex_url()}{path}", headers=PLEX_HEADERS,
+    r = _session.delete(f"{get_plex_url()}{path}", headers=PLEX_HEADERS,
                               params={"X-Plex-Token": get_plex_token()}, timeout=30)
     r.raise_for_status()
     return r
@@ -217,7 +223,7 @@ def plex_delete(path):
 def plex_get_raw(path, params=None):
     p = {"X-Plex-Token": get_plex_token()}
     if params: p.update(params)
-    r = http_requests.get(f"{get_plex_url()}{path}", params=p, timeout=15, stream=True)
+    r = _session.get(f"{get_plex_url()}{path}", params=p, timeout=15, stream=True)
     r.raise_for_status()
     return r
 
@@ -243,7 +249,7 @@ def plex_owner_id():
         mc = plex_get("/accounts")
         ids = sorted([int(a["id"]) for a in mc.get("Account", []) if a.get("id", 0) > 0])
         return str(ids[0]) if ids else None
-    except:
+    except Exception:
         return None
 
 _acct_name_cache: dict = {}
@@ -288,7 +294,7 @@ def plex_genre_id(section_key, genre_name):
                 if "genre=" in key:
                     return key.split("genre=")[1].split("&")[0]
                 return key.rstrip("/").split("/")[-1] or None
-    except:
+    except Exception:
         pass
     return None
 
@@ -310,5 +316,5 @@ def get_item_providers(item_id):
         mc = plex_get(f"/library/metadata/{item_id}")
         item = (mc.get("Metadata") or [{}])[0]
         return parse_plex_guids(item.get("Guid", []))
-    except:
+    except Exception:
         return {}
