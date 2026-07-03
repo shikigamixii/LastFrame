@@ -172,22 +172,27 @@ async function viewLibraries(){
 }
 
 // Recently Watched All page
+let _recentAllReqId=0;
 async function viewRecentAll(type,page){
   stopHomePolling();
   page=page||1;
+  const reqId=++_recentAllReqId;
   const isMovies=type==='movies';
   const title=isMovies?'Recently Watched Movies':'Recently Watched Episodes';
   const el=$el();el.innerHTML='<div class="loading">Loading</div>';
   crumbs([{label:'Home',hash:'/'},{label:title}]);
   try{
     const data=await api(`/api/recent/${type}?page=${page}`).catch(()=>({items:[],totalCount:0,page:1,pageSize:50,isSearch:false}));
+    if(reqId!==_recentAllReqId)return;
     const items=data.items||[];
     if(!S.libraries.length)S.libraries=await api("/api/libraries").catch(()=>[]);
+    if(reqId!==_recentAllReqId)return;
     const moviesLib=S.libraries.find(l=>l.type==='movies');
     const showsLib=S.libraries.find(l=>l.type==='tvshows');
     const lib=isMovies?moviesLib:showsLib;
     const itemType=isMovies?'movie':'episode';
     const ws=await fetchRecentSummary(isMovies?items:[],isMovies?[]:items);
+    if(reqId!==_recentAllReqId)return;
     if(!items.length){
       el.innerHTML='<div class="empty-state">No recently watched items found.</div>';
       return;
@@ -195,7 +200,10 @@ async function viewRecentAll(type,page){
     const cardsHtml=renderRecentItems(items,itemType,lib,ws);
     el.innerHTML=`<h2 style="margin-bottom:1.25rem">${esc(title)}</h2><div class="recent-row" id="recentAllGrid" style="flex-wrap:wrap">${cardsHtml}</div>`;
     renderPagination(data,'/recent/'+type,page,'recentAllGrid');
-  }catch(e){el.innerHTML='<div class="empty-state">Failed to load.<br><small>'+esc(e.message)+'</small></div>';}
+  }catch(e){
+    if(reqId!==_recentAllReqId)return;
+    el.innerHTML='<div class="empty-state">Failed to load.<br><small>'+esc(e.message)+'</small></div>';
+  }
 }
 
 // ── Recently Added (triage inbox for newly added movies & series) ──────
