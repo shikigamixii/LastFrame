@@ -1031,7 +1031,7 @@ def _admin_recent_items(admin_id, include_type, fields, monitored, show_all):
     base = {
         "userId": admin_id, "IsPlayed": "true", "Recursive": "true",
         "IncludeItemTypes": include_type, "SortBy": "DatePlayed",
-        "SortOrder": "Descending", "Limit": 20, "fields": fields,
+        "SortOrder": "Descending", "Limit": 100, "fields": fields,
     }
     if show_all or not monitored:
         try:
@@ -1111,7 +1111,7 @@ def api_recent_movies():
         SELECT rating_key, MAX(updated_at) as latest_at
         FROM watch_events
         WHERE event_type='play' AND item_type='movie' AND rating_key != ''
-        GROUP BY rating_key ORDER BY latest_at DESC LIMIT 60
+        GROUP BY rating_key ORDER BY latest_at DESC LIMIT 200
     """).fetchall()
     db.close()
 
@@ -1129,6 +1129,12 @@ def api_recent_movies():
             "lastPlayedDate": ts}
 
     out = sorted(result.values(), key=lambda x: x.get("lastPlayedDate") or "", reverse=True)
+    page = request.args.get("page", type=int)
+    if page is not None:
+        page = max(1, page)
+        offset = (page - 1) * PAGE_SIZE
+        return jsonify({"items": out[offset:offset + PAGE_SIZE], "totalCount": len(out),
+            "page": page, "pageSize": PAGE_SIZE, "isSearch": False})
     limit = request.args.get("limit", 10, type=int)
     return jsonify(out[:limit])
 
@@ -1164,7 +1170,7 @@ def api_recent_episodes():
         SELECT rating_key, MAX(updated_at) as latest_at
         FROM watch_events
         WHERE event_type='play' AND item_type='episode' AND rating_key != ''
-        GROUP BY rating_key ORDER BY latest_at DESC LIMIT 60
+        GROUP BY rating_key ORDER BY latest_at DESC LIMIT 200
     """).fetchall()
     db.close()
 
@@ -1185,6 +1191,12 @@ def api_recent_episodes():
             "lastPlayedDate": ts, "seriesId": series_id}
 
     out = sorted(result.values(), key=lambda x: x.get("lastPlayedDate") or "", reverse=True)
+    page = request.args.get("page", type=int)
+    if page is not None:
+        page = max(1, page)
+        offset = (page - 1) * PAGE_SIZE
+        return jsonify({"items": out[offset:offset + PAGE_SIZE], "totalCount": len(out),
+            "page": page, "pageSize": PAGE_SIZE, "isSearch": False})
     limit = request.args.get("limit", 10, type=int)
     return jsonify(out[:limit])
 
@@ -1242,8 +1254,8 @@ def api_backfill_history():
 def api_watch_summary_items():
     raw_movie_ids = [x for x in (request.args.get("movieIds", "") or "").split(",") if x]
     raw_ep_ids   = [x for x in (request.args.get("episodeIds", "") or "").split(",") if x]
-    movie_ids = [i for i in raw_movie_ids if _ID_RE.match(i)][:20]
-    ep_ids    = [i for i in raw_ep_ids    if _ID_RE.match(i)][:20]
+    movie_ids = [i for i in raw_movie_ids if _ID_RE.match(i)]
+    ep_ids    = [i for i in raw_ep_ids    if _ID_RE.match(i)]
     if not movie_ids and not ep_ids:
         return jsonify({})
 
