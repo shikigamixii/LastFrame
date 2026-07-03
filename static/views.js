@@ -172,14 +172,16 @@ async function viewLibraries(){
 }
 
 // Recently Watched All page
-async function viewRecentAll(type){
+async function viewRecentAll(type,page){
   stopHomePolling();
+  page=page||1;
   const isMovies=type==='movies';
   const title=isMovies?'Recently Watched Movies':'Recently Watched Episodes';
   const el=$el();el.innerHTML='<div class="loading">Loading</div>';
   crumbs([{label:'Home',hash:'/'},{label:title}]);
   try{
-    const items=await api(`/api/recent/${type}?limit=100`).catch(()=>[]);
+    const data=await api(`/api/recent/${type}?page=${page}`).catch(()=>({items:[],totalCount:0,page:1,pageSize:50,isSearch:false}));
+    const items=data.items||[];
     if(!S.libraries.length)S.libraries=await api("/api/libraries").catch(()=>[]);
     const moviesLib=S.libraries.find(l=>l.type==='movies');
     const showsLib=S.libraries.find(l=>l.type==='tvshows');
@@ -191,7 +193,8 @@ async function viewRecentAll(type){
       return;
     }
     const cardsHtml=renderRecentItems(items,itemType,lib,ws);
-    el.innerHTML=`<h2 style="margin-bottom:1.25rem">${esc(title)}</h2><div class="recent-row" style="flex-wrap:wrap">${cardsHtml}</div>`;
+    el.innerHTML=`<h2 style="margin-bottom:1.25rem">${esc(title)}</h2><div class="recent-row" id="recentAllGrid" style="flex-wrap:wrap">${cardsHtml}</div>`;
+    renderPagination(data,'/recent/'+type,page,'recentAllGrid');
   }catch(e){el.innerHTML='<div class="empty-state">Failed to load.<br><small>'+esc(e.message)+'</small></div>';}
 }
 
@@ -314,7 +317,7 @@ async function viewGrid(libId,page){
     h+='<div class="item-grid" id="gridItems"></div>';
     el.innerHTML=h;
     renderGridItems(data.items,libId,lib);
-    renderPagination(data,libId,page);
+    renderPagination(data,'/lib/'+libId,page);
     if(_showOnlyWatched&&_watchSummary)applyWatchedFilter();
     attachSearchListener(libId);
     fetchGenres(libId,lib.type);
@@ -364,8 +367,9 @@ function getPageRange(cur,total){
   for(let i=0;i<arr.length;i++){if(i>0&&arr[i]-arr[i-1]>1)r.push('...');r.push(arr[i]);}
   return r;
 }
-function renderPagination(data,libId,page){
-  const container=document.getElementById("gridItems")?.parentNode;
+function renderPagination(data,basePath,page,containerId){
+  containerId=containerId||"gridItems";
+  const container=document.getElementById(containerId)?.parentNode;
   if(!container)return;
   let pagHtml='';
   if(!data.isSearch){
@@ -374,9 +378,9 @@ function renderPagination(data,libId,page){
       let nums='';
       for(const r of getPageRange(page,tp)){
         if(r==='...')nums+=`<span class="page-ellipsis">…</span>`;
-        else nums+=`<button class="page-btn${r===page?' current':''}"${r===page?' disabled':''} onclick="nav('/lib/${libId}/p/${r}')">${r}</button>`;
+        else nums+=`<button class="page-btn${r===page?' current':''}"${r===page?' disabled':''} onclick="nav('${basePath}/p/${r}')">${r}</button>`;
       }
-      pagHtml=`<div class="pagination"><button ${page<=1?'disabled':''} onclick="nav('/lib/${libId}/p/1')" title="First">«</button><button ${page<=1?'disabled':''} onclick="nav('/lib/${libId}/p/${page-1}')" title="Previous">‹</button>${nums}<button ${page>=tp?'disabled':''} onclick="nav('/lib/${libId}/p/${page+1}')" title="Next">›</button><button ${page>=tp?'disabled':''} onclick="nav('/lib/${libId}/p/${tp}')" title="Last">»</button><span class="page-info">${data.totalCount} items · Page ${page} of ${tp}</span></div>`;
+      pagHtml=`<div class="pagination"><button ${page<=1?'disabled':''} onclick="nav('${basePath}/p/1')" title="First">«</button><button ${page<=1?'disabled':''} onclick="nav('${basePath}/p/${page-1}')" title="Previous">‹</button>${nums}<button ${page>=tp?'disabled':''} onclick="nav('${basePath}/p/${page+1}')" title="Next">›</button><button ${page>=tp?'disabled':''} onclick="nav('${basePath}/p/${tp}')" title="Last">»</button><span class="page-info">${data.totalCount} items · Page ${page} of ${tp}</span></div>`;
     }
   }else{
     pagHtml=`<div class="pagination"><span class="page-info">${data.items.length} results</span></div>`;
@@ -394,7 +398,7 @@ function attachSearchListener(libId){
     if(_activeGenre)url+="&genre="+encodeURIComponent(_activeGenre);
     const data=await api(url);
     renderGridItems(data.items,libId,S.lib);
-    renderPagination(data,libId,1);
+    renderPagination(data,'/lib/'+libId,1);
   },300);
   input.oninput=()=>searchFn(input.value);
 }
@@ -508,7 +512,7 @@ async function toggleWatchedFilter(){
     await applyWatchedFilter();
   }else{
     renderGridItems(_currentGridItems,_currentLibId,S.lib);
-    if(_currentPaginationData)renderPagination(_currentPaginationData,_currentLibId,_currentPage);
+    if(_currentPaginationData)renderPagination(_currentPaginationData,'/lib/'+_currentLibId,_currentPage);
   }
   if(btn)btn.disabled=false;
 }
