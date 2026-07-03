@@ -67,7 +67,10 @@ async function route(){
   const h=(location.hash||'#/').slice(1),p=h.split('/').filter(Boolean);
   if(!p.length)return viewLibraries();
   if(p[0]==='recently-added')return viewRecentlyAdded();
-  if(p[0]==='recent'&&p[1])return viewRecentAll(p[1]);
+  if(p[0]==='recent'&&p[1]){
+    if(p[2]==='p')return viewRecentAll(p[1],parseInt(p[3])||1);
+    return viewRecentAll(p[1],1);
+  }
   if(p[0]==='lib'&&p[1]){
     await ensureLib(p[1]);
     if(p.length===2)return viewGrid(p[1],1);
