@@ -1096,7 +1096,7 @@ def api_recent_movies():
     for sec in sections:
         try:
             mc = plex_get(f"/library/sections/{sec['key']}/all",
-                          {"type": 1, "sort": "lastViewedAt:desc", "X-Plex-Container-Size": 20})
+                          {"type": 1, "sort": "lastViewedAt:desc", "X-Plex-Container-Size": 100})
             for i in mc.get("Metadata", []):
                 lv = i.get("lastViewedAt")
                 if not lv or not (i.get("viewCount") or 0): continue
@@ -1114,7 +1114,7 @@ def api_recent_movies():
         FROM plex_watch_events
         WHERE event_type='play' AND item_type='movie'
         GROUP BY provider_type, provider_id
-        ORDER BY latest_at DESC LIMIT 60
+        ORDER BY latest_at DESC LIMIT 200
     """).fetchall()
 
     missing = {(r["provider_type"], r["provider_id"]) for r in rows if not r["rating_key"]}
@@ -1142,6 +1142,12 @@ def api_recent_movies():
             "lastPlayedDate": ts}
 
     out = sorted(result.values(), key=lambda x: x.get("lastPlayedDate") or "", reverse=True)
+    page = request.args.get("page", type=int)
+    if page is not None:
+        page = max(1, page)
+        offset = (page - 1) * PAGE_SIZE
+        return jsonify({"items": out[offset:offset + PAGE_SIZE], "totalCount": len(out),
+            "page": page, "pageSize": PAGE_SIZE, "isSearch": False})
     limit = request.args.get("limit", 10, type=int)
     return jsonify(out[:limit])
 
@@ -1161,7 +1167,7 @@ def api_recent_episodes():
     for sec in sections:
         try:
             mc = plex_get(f"/library/sections/{sec['key']}/all",
-                          {"type": 4, "sort": "lastViewedAt:desc", "X-Plex-Container-Size": 20})
+                          {"type": 4, "sort": "lastViewedAt:desc", "X-Plex-Container-Size": 100})
             for i in mc.get("Metadata", []):
                 lv = i.get("lastViewedAt")
                 if not lv or not (i.get("viewCount") or 0): continue
@@ -1182,7 +1188,7 @@ def api_recent_episodes():
         FROM plex_watch_events
         WHERE event_type='play' AND item_type='episode'
         GROUP BY provider_type, provider_id
-        ORDER BY latest_at DESC LIMIT 60
+        ORDER BY latest_at DESC LIMIT 200
     """).fetchall()
 
     missing = {(r["provider_type"], r["provider_id"]) for r in rows if not r["rating_key"]}
@@ -1213,6 +1219,12 @@ def api_recent_episodes():
             "lastPlayedDate": ts, "seriesId": series_id}
 
     out = sorted(result.values(), key=lambda x: x.get("lastPlayedDate") or "", reverse=True)
+    page = request.args.get("page", type=int)
+    if page is not None:
+        page = max(1, page)
+        offset = (page - 1) * PAGE_SIZE
+        return jsonify({"items": out[offset:offset + PAGE_SIZE], "totalCount": len(out),
+            "page": page, "pageSize": PAGE_SIZE, "isSearch": False})
     limit = request.args.get("limit", 10, type=int)
     return jsonify(out[:limit])
 
@@ -1624,8 +1636,8 @@ if MANAGED_USER_SWEEP_INTERVAL > 0:
 def api_watch_summary_items():
     raw_movie_ids = [x for x in (request.args.get("movieIds", "") or "").split(",") if x]
     raw_ep_ids   = [x for x in (request.args.get("episodeIds", "") or "").split(",") if x]
-    movie_ids = [i for i in raw_movie_ids if _ID_RE.match(i)][:20]
-    ep_ids    = [i for i in raw_ep_ids    if _ID_RE.match(i)][:20]
+    movie_ids = [i for i in raw_movie_ids if _ID_RE.match(i)]
+    ep_ids    = [i for i in raw_ep_ids    if _ID_RE.match(i)]
     if not movie_ids and not ep_ids:
         return jsonify({})
 
