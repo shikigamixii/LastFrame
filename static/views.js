@@ -710,9 +710,16 @@ async function viewEpisodes(seriesId,seasonId){
       // Do NOT auto-delete here. This is a read/navigation path, and a
       // transient Jellyfin hiccup can return an empty list for a season that
       // still has files on disk — deleting on that signal is irreversible.
-      el.innerHTML='<div class="empty-state">No episodes found in this season.'
-        +'<br><button class="btn-delete" style="margin-top:1rem" onclick="deleteSeason(\''+seasonId+'\',\''+seriesId+'\')">Delete empty season</button>'
-        +'<button class="btn-cancel" style="margin-top:1rem;margin-left:.5rem" onclick="nav(\'/lib/'+lib.id+'/s/'+seriesId+'\')">Back to series</button></div>';
+      el.innerHTML='';
+      const empty=document.createElement('div');empty.className='empty-state';
+      empty.appendChild(document.createTextNode('No episodes found in this season.'));
+      empty.appendChild(document.createElement('br'));
+      const delBtn=document.createElement('button');delBtn.className='btn-delete';delBtn.style.marginTop='1rem';delBtn.textContent='Delete empty season';
+      delBtn.addEventListener('click',()=>deleteSeason(seasonId,seriesId));
+      const backBtn=document.createElement('button');backBtn.className='btn-cancel';backBtn.style.marginTop='1rem';backBtn.style.marginLeft='.5rem';backBtn.textContent='Back to series';
+      backBtn.addEventListener('click',()=>nav('/lib/'+lib.id+'/s/'+encodeURIComponent(seriesId)));
+      empty.appendChild(delBtn);empty.appendChild(backBtn);
+      el.appendChild(empty);
       return;
     }
     S.episodes={};episodes.forEach(ep=>{S.episodes[ep.id]={name:ep.name,index:ep.indexNumber,allWatched:isWatchedByAssigned(ep.users,S.assignedIds)};});
