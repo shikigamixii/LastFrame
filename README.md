@@ -303,7 +303,7 @@ LastFrame can automatically delete media after all assigned users have watched i
 
 ```bash
 git pull
-docker compose up -d --build --build
+docker compose up -d --build
 ```
 
 Your data volume is preserved automatically.
