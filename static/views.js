@@ -672,7 +672,7 @@ async function viewMovie(movieId){
     let displayUsers=ws;if(assign.mode==="custom"&&assign.assigned.length){const assignedSet=new Set(assign.assigned);displayUsers=ws.filter(u=>assignedSet.has(u.userId));}
     const allW=isWatchedByAssigned(ws,S.assignedIds);
     let h=renderAssignPanel(movieId,assign,false);
-    h+='<div class="movie-detail"><div class="movie-detail-header"><div class="movie-detail-poster"><img src="/api/image/'+movieId+'?type=Primary&maxWidth=400" onerror="this.parentElement.innerHTML=\'🎬\'" alt=""></div><div class="movie-detail-info"><h2>'+esc(it.name)+(allW?'<span class="all-watched-tag">All Watched</span>':'')+'</h2>'+(it.year?'<div class="year">'+it.year+'</div>':'')+renderAutoDeleteBadge(adStatus,movieId,'movie')+'<div style="margin-top:1rem"><button class="btn-delete-bulk" onclick="deleteMovie(\''+movieId+'\')">Delete Movie</button></div></div></div><div class="movie-watch-list">';
+    h+='<div class="movie-detail"><div class="movie-detail-header"><div class="movie-detail-poster"><img src="/api/image/'+encodeURIComponent(movieId)+'?type=Primary&maxWidth=400" onerror="this.parentElement.innerHTML=\'🎬\'" alt=""></div><div class="movie-detail-info"><h2>'+esc(it.name)+(allW?'<span class="all-watched-tag">All Watched</span>':'')+'</h2>'+(it.year?'<div class="year">'+it.year+'</div>':'')+renderAutoDeleteBadge(adStatus,movieId,'movie')+'<div style="margin-top:1rem"><button class="btn-delete-bulk" onclick="deleteMovie(\''+movieId+'\')">Delete Movie</button></div></div></div><div class="movie-watch-list">';
     for(const u of displayUsers)h+='<div class="movie-watch-item">'+badge(u)+'</div>';
     h+='</div></div>';el.innerHTML=h;
   }catch(e){el.innerHTML='<div class="empty-state">Error: '+esc(e.message)+'</div>';}
