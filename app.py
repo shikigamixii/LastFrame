@@ -154,7 +154,7 @@ def _log_unhandled(e):
     import traceback, sys
     print(f"[500] {request.method} {request.path}: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
     traceback.print_exc(file=sys.stderr)
-    return jsonify({"error": "Internal server error", "type": type(e).__name__, "message": str(e)}), 500
+    return jsonify({"error": "Internal server error"}), 500
 
 # ── Perf diagnostics ──────────────────────────────────────────────────
 # Per-request timing for the endpoints the home page calls on load.
