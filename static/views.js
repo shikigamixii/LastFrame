@@ -757,10 +757,11 @@ async function viewEpisodeDetail(libId,seriesId,seasonId,episodeId){
   const lib=S.lib||{id:libId,name:"Library"};
   const ser=S.series||{id:seriesId,name:"Series"};
   const sea=S.season||{id:seasonId,name:"Season"};
+  const safeEpisodeId=encodeURIComponent(String(episodeId||''));
   try{
     const[epItem,ws,assign]=await Promise.all([
-      api("/api/item/"+episodeId),
-      api("/api/watch-status/"+episodeId),
+      api("/api/item/"+safeEpisodeId),
+      api("/api/watch-status/"+safeEpisodeId),
       api("/api/assignments/"+seriesId)
     ]);
     S.assignedIds=assign.mode==="custom"?assign.assigned:null;
@@ -775,7 +776,7 @@ async function viewEpisodeDetail(libId,seriesId,seasonId,episodeId){
     let displayUsers=ws;
     if(assign.mode==="custom"&&assign.assigned.length){const assignedSet=new Set(assign.assigned);displayUsers=ws.filter(u=>assignedSet.has(u.userId));}
     const allW=isWatchedByAssigned(ws,S.assignedIds);
-    let h=`<div class="movie-detail"><div class="movie-detail-header"><div class="movie-detail-poster"><img src="/api/image/${episodeId}?type=Primary&maxWidth=400" onerror="this.parentElement.innerHTML='📺'" alt=""></div><div class="movie-detail-info"><h2>${esc(epName)}${allW?'<span class="all-watched-tag">All Watched</span>':''}</h2><div class="year">${esc(cleanName(ser.name))} · ${esc(cleanName(sea.name))}</div></div></div><div class="movie-watch-list">`;
+    let h=`<div class="movie-detail"><div class="movie-detail-header"><div class="movie-detail-poster"><img src="/api/image/${safeEpisodeId}?type=Primary&maxWidth=400" onerror="this.parentElement.innerHTML='📺'" alt=""></div><div class="movie-detail-info"><h2>${esc(epName)}${allW?'<span class="all-watched-tag">All Watched</span>':''}</h2><div class="year">${esc(cleanName(ser.name))} · ${esc(cleanName(sea.name))}</div></div></div><div class="movie-watch-list">`;
     for(const u of displayUsers)h+='<div class="movie-watch-item">'+badge(u)+'</div>';
     h+='</div></div>';
     el.innerHTML=h;
