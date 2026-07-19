@@ -725,7 +725,7 @@ async function viewEpisodes(seriesId,seasonId){
     S.episodes={};episodes.forEach(ep=>{S.episodes[ep.id]={name:ep.name,index:ep.indexNumber,allWatched:isWatchedByAssigned(ep.users,S.assignedIds)};});
     let uNames=[];if(assign.mode==="custom"&&assign.assigned.length){const assignedSet=new Set(assign.assigned);if(episodes[0]?.users){uNames=episodes[0].users.filter(u=>assignedSet.has(u.userId)).map(u=>u.userName);}}else{if(episodes[0]?.users)uNames=episodes[0].users.map(u=>u.userName);}
     const total=episodes.length,watchedAll=Object.values(S.episodes).filter(e=>e.allWatched).length;
-    let posterHtml=`<div style="display:flex; gap:1.5rem; margin-bottom:1.5rem; align-items:center;"><div style="width:120px; border-radius:8px; overflow:hidden; background:var(--bg-card); aspect-ratio:2/3; flex-shrink:0;"><img src="/api/image/${seasonId}?type=Primary&maxWidth=200" onerror="this.parentElement.innerHTML='📺'" style="width:100%; height:100%; object-fit:cover;"></div><div><h2 style="margin-bottom:0.25rem">${esc(cleanName(sea.name))}</h2><div class="lib-type">${esc(cleanName(ser.name))}</div></div></div>`;
+    let posterHtml=`<div style="display:flex; gap:1.5rem; margin-bottom:1.5rem; align-items:center;"><div style="width:120px; border-radius:8px; overflow:hidden; background:var(--bg-card); aspect-ratio:2/3; flex-shrink:0;"><img src="/api/image/${encodeURIComponent(seasonId)}?type=Primary&maxWidth=200" onerror="this.parentElement.innerHTML='📺'" style="width:100%; height:100%; object-fit:cover;"></div><div><h2 style="margin-bottom:0.25rem">${esc(cleanName(sea.name))}</h2><div class="lib-type">${esc(cleanName(ser.name))}</div></div></div>`;
     let h=posterHtml+'<div class="watch-summary"><div><strong>'+watchedAll+'</strong> of <strong>'+total+'</strong> watched by '+(S.assignedIds?'assigned users':'all users')+(watchedAll===total?' — <span style="color:var(--green)">safe to delete</span>':'')+'</div>'+(watchedAll>0?'<button class="btn-delete-bulk" onclick="deleteAllWatched()">Delete '+watchedAll+' watched</button>':'')+'</div>';
     h+='<div class="selection-toolbar"><button onclick="selectAll()">Select All</button><button onclick="selectWatched()">Select Watched</button><button onclick="selectNone()">Deselect All</button><span id="selCount" style="color:var(--text-muted)">0 selected</span><button class="delete-selected" id="btnDelSel" disabled onclick="deleteSelected()">Delete Selected</button></div>';
     h+='<div class="table-wrap"><table class="episode-table"><thead><tr><th style="width:30px"><input type="checkbox" class="ep-checkbox" onchange="toggleAll(this.checked)"></th><th>Episode</th>'+uNames.map(n=>'<th class="watch-cell">'+esc(n)+'</th>').join('')+'<th>Actions</th></tr></thead><tbody>';
@@ -756,10 +756,11 @@ async function viewEpisodeDetail(libId,seriesId,seasonId,episodeId){
   const lib=S.lib||{id:libId,name:"Library"};
   const ser=S.series||{id:seriesId,name:"Series"};
   const sea=S.season||{id:seasonId,name:"Season"};
+  const safeEpisodeId=encodeURIComponent(String(episodeId||''));
   try{
     const[epItem,ws,assign]=await Promise.all([
-      api("/api/item/"+episodeId),
-      api("/api/watch-status/"+episodeId),
+      api("/api/item/"+safeEpisodeId),
+      api("/api/watch-status/"+safeEpisodeId),
       api("/api/assignments/"+seriesId)
     ]);
     S.assignedIds=assign.mode==="custom"?assign.assigned:null;
@@ -774,7 +775,7 @@ async function viewEpisodeDetail(libId,seriesId,seasonId,episodeId){
     let displayUsers=ws;
     if(assign.mode==="custom"&&assign.assigned.length){const assignedSet=new Set(assign.assigned);displayUsers=ws.filter(u=>assignedSet.has(u.userId));}
     const allW=isWatchedByAssigned(ws,S.assignedIds);
-    let h=`<div class="movie-detail"><div class="movie-detail-header"><div class="movie-detail-poster"><img src="/api/image/${episodeId}?type=Primary&maxWidth=400" onerror="this.parentElement.innerHTML='📺'" alt=""></div><div class="movie-detail-info"><h2>${esc(epName)}${allW?'<span class="all-watched-tag">All Watched</span>':''}</h2><div class="year">${esc(cleanName(ser.name))} · ${esc(cleanName(sea.name))}</div></div></div><div class="movie-watch-list">`;
+    let h=`<div class="movie-detail"><div class="movie-detail-header"><div class="movie-detail-poster"><img src="/api/image/${safeEpisodeId}?type=Primary&maxWidth=400" onerror="this.parentElement.innerHTML='📺'" alt=""></div><div class="movie-detail-info"><h2>${esc(epName)}${allW?'<span class="all-watched-tag">All Watched</span>':''}</h2><div class="year">${esc(cleanName(ser.name))} · ${esc(cleanName(sea.name))}</div></div></div><div class="movie-watch-list">`;
     for(const u of displayUsers)h+='<div class="movie-watch-item">'+badge(u)+'</div>';
     h+='</div></div>';
     el.innerHTML=h;
