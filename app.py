@@ -781,8 +781,9 @@ def api_genres():
         mc = jellyfin_get("/Genres", {"ParentId": pid, "Limit": 1000})
         genres = sorted(set(g.get("Name", "") for g in mc.get("Items", []) if g.get("Name")))
         return jsonify(genres)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        app.logger.exception("Failed to fetch genres")
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route("/api/seasons/<series_id>")
 @login_required_api
