@@ -1857,8 +1857,9 @@ def api_assignments_bulk():
             recently_added.mark_handled(item_id)
             success_count += 1
             app.logger.info(f"Bulk assigned users to {item_id} from {request.remote_addr}")
-        except Exception as e:
-            failed_ids.append({"id": item_id, "error": str(e)})
+        except Exception:
+            app.logger.exception(f"Bulk assignment failed for item {item_id} from {request.remote_addr}")
+            failed_ids.append({"id": item_id, "error": "Failed to assign users to this item"})
     return jsonify({"success": True, "assigned_count": success_count, "failed": failed_ids})
 
 @app.route("/api/auto-delete/series/<series_id>", methods=["GET"])
