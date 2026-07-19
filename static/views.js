@@ -176,6 +176,7 @@ let _recentAllReqId=0;
 async function viewRecentAll(type,page){
   stopHomePolling();
   page=page||1;
+  if(type!=='movies'&&type!=='episodes'){viewLibraries();return;}
   const reqId=++_recentAllReqId;
   const isMovies=type==='movies';
   const title=isMovies?'Recently Watched Movies':'Recently Watched Episodes';
@@ -709,7 +710,7 @@ async function viewEpisodes(seriesId,seasonId){
     S.assignedIds=assign.mode==="custom"?assign.assigned:null;
     if(!episodes.length){
       // Do NOT auto-delete here. This is a read/navigation path, and a
-      // transient Jellyfin hiccup can return an empty list for a season that
+      // transient Plex hiccup can return an empty list for a season that
       // still has files on disk — deleting on that signal is irreversible.
       el.innerHTML='';
       const empty=document.createElement('div');empty.className='empty-state';
@@ -727,8 +728,7 @@ async function viewEpisodes(seriesId,seasonId){
     let uNames=[];if(assign.mode==="custom"&&assign.assigned.length){const assignedSet=new Set(assign.assigned);if(episodes[0]?.users){uNames=episodes[0].users.filter(u=>assignedSet.has(u.userId)).map(u=>u.userName);}}else{if(episodes[0]?.users)uNames=episodes[0].users.map(u=>u.userName);}
     const total=episodes.length,watchedAll=Object.values(S.episodes).filter(e=>e.allWatched).length;
     let posterHtml=`<div style="display:flex; gap:1.5rem; margin-bottom:1.5rem; align-items:center;"><div style="width:120px; border-radius:8px; overflow:hidden; background:var(--bg-card); aspect-ratio:2/3; flex-shrink:0;"><img src="/api/image/${encodeURIComponent(seasonId)}?type=Primary&maxWidth=200" onerror="this.parentElement.innerHTML='📺'" style="width:100%; height:100%; object-fit:cover;"></div><div><h2 style="margin-bottom:0.25rem">${esc(cleanName(sea.name))}</h2><div class="lib-type">${esc(cleanName(ser.name))}</div></div></div>`;
-    const epWord=total===1?'episode':'episodes';
-    let h=posterHtml+'<div class="watch-summary"><div><strong>'+watchedAll+'</strong> of <strong>'+total+'</strong> '+epWord+' watched by '+(S.assignedIds?'assigned users':'all users')+(watchedAll===total?' — <span style="color:var(--green)">safe to delete</span>':'')+'</div>'+(watchedAll>0?'<button class="btn-delete-bulk" onclick="deleteAllWatched()">Delete '+watchedAll+' watched</button>':'')+'</div>';
+    let h=posterHtml+'<div class="watch-summary"><div><strong>'+watchedAll+'</strong> of <strong>'+total+'</strong> watched by '+(S.assignedIds?'assigned users':'all users')+(watchedAll===total?' — <span style="color:var(--green)">safe to delete</span>':'')+'</div>'+(watchedAll>0?'<button class="btn-delete-bulk" onclick="deleteAllWatched()">Delete '+watchedAll+' watched</button>':'')+'</div>';
     h+='<div class="selection-toolbar"><button onclick="selectAll()">Select All</button><button onclick="selectWatched()">Select Watched</button><button onclick="selectNone()">Deselect All</button><span id="selCount" style="color:var(--text-muted)">0 selected</span><button class="delete-selected" id="btnDelSel" disabled onclick="deleteSelected()">Delete Selected</button></div>';
     h+='<div class="table-wrap"><table class="episode-table"><thead><tr><th style="width:30px"><input type="checkbox" class="ep-checkbox" onchange="toggleAll(this.checked)"></th><th>Episode</th>'+uNames.map(n=>'<th class="watch-cell">'+esc(n)+'</th>').join('')+'<th>Actions</th></tr></thead><tbody>';
     for(const ep of episodes){const allD=S.episodes[ep.id].allWatched,umap={};ep.users.forEach(u=>{umap[u.userName]=u;});h+='<tr id="ep-'+ep.id+'"><td><input type="checkbox" class="ep-checkbox" data-ep-id="'+ep.id+'" onchange="updateSelCount()"></td><td><span class="ep-num">E'+String(ep.indexNumber).padStart(2,"0")+'</span><span class="ep-name">'+esc(ep.name)+'</span>'+(ep.runTimeTicks?'<span class="ep-runtime">('+fmtT(ep.runTimeTicks)+')</span>':'')+(allD?'<span class="all-watched-tag">All</span>':'')+'</td>';for(const n of uNames){const u=umap[n];h+='<td class="watch-cell">'+(u?badge(u):'<span class="watch-badge unwatched">—</span>')+'</td>';}h+='<td><button class="btn-delete" onclick="deleteEpisode(\''+ep.id+'\')">Delete</button></td>';}
@@ -819,7 +819,7 @@ function renderAutoDeleteBadge(adStatus, id, type='series'){
     style='color:var(--text-muted)';
     nextEnabled=true;nextLabel=`Enable for this ${itemWord}`;
   }
-  const sweepBtn=globalOn&&(ov===true||eff)?`<button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="runAutoDeleteSweep()">Run sweep now</button>`:'';
+  const sweepBtn=globalOn&&(ov===true||eff)?`<button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="runAutoDeleteSweep(this)">Run sweep now</button>`:'';
   return `<div style="margin-top:0.5rem;font-size:0.78rem;${style}">${label}
     <button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${id}',${nextEnabled})">${nextLabel}</button>${clearBtn}${sweepBtn}</div>`;
 }
@@ -837,12 +837,19 @@ async function setAutoDeleteMovie(movieId,enabled){
   }
   if(_itemOverlayState)await renderItemOverlay();else route();
 }
-async function runAutoDeleteSweep(){
+async function runAutoDeleteSweep(btn){
+  const el=btn||document.activeElement;
+  const orig=el&&el.textContent;
+  if(el){el.disabled=true;el.textContent='Running…';}
   try{
     const resp=await api('/api/auto-delete/sweep',{method:'POST'});
+    if(el){el.disabled=false;el.textContent=orig;}
     alert(resp&&resp.success?'Sweep complete. Anything eligible has been deleted — refresh to see changes.':'Sweep failed: '+(resp&&resp.error||'unknown error'));
     route();
-  }catch(e){alert('Sweep failed: '+e.message);}
+  }catch(e){
+    if(el){el.disabled=false;el.textContent=orig;}
+    alert('Sweep failed: '+e.message);
+  }
 }
 
 // Badge hover tooltip — resolves watcher names at hover time
@@ -874,4 +881,4 @@ async function runAutoDeleteSweep(){
 })();
 
 // Init
-(async()=>{if(!await checkAuth())return;try{const[u,l]=await Promise.all([api("/api/users"),api("/api/libraries")]);S.users=u;S.libraries=l;}catch(e){if(!e.message.includes("Unauthorized"))$el().innerHTML='<div class="empty-state">Failed to connect to Jellyfin</div>';return;}route();})();
+(async()=>{if(!await checkAuth())return;try{const[u,l]=await Promise.all([api("/api/users"),api("/api/libraries")]);S.users=u;S.libraries=l;}catch(e){if(!e.message.includes("Unauthorized"))$el().innerHTML='<div class="empty-state">Failed to connect to Plex</div>';return;}route();})();
