@@ -160,7 +160,7 @@ def _log_unhandled(e):
     import traceback, sys
     print(f"[500] {request.method} {request.path}: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
     traceback.print_exc(file=sys.stderr)
-    return jsonify({"error": "Internal server error", "type": type(e).__name__, "message": str(e)}), 500
+    return jsonify({"error": "Internal server error"}), 500
 
 # ── Perf diagnostics ──────────────────────────────────────────────────
 # Per-request timing for the endpoints the home page calls on load.
@@ -1346,8 +1346,9 @@ def api_debug_history():
             "X-Plex-Container-Start": 0,
             "X-Plex-Container-Size": 500,
         })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 502
+    except Exception:
+        app.logger.exception("Failed to fetch Plex session history")
+        return jsonify({"ok": False, "error": "Failed to fetch history from media server"}), 502
     items = mc.get("Metadata") or mc.get("Video") or []
     out = []
     for i in items:
@@ -1565,8 +1566,9 @@ def _run_managed_user_sweep():
                         {"type": item_type_code, "unwatched": 0, "includeGuids": 1,
                          "X-Plex-Container-Size": 10000},
                     )
-                except Exception as e:
-                    sect_entry["error"] = str(e)
+                except Exception:
+                    app.logger.exception("Failed to import section %s", section_key)
+                    sect_entry["error"] = "Failed to import section"
                     entry["sections"].append(sect_entry)
                     continue
 
