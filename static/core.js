@@ -33,7 +33,27 @@ function badge(u){
   if(u.playedPercentage>0)return'<div><span class="watch-badge partial">◐ '+esc(u.userName)+' '+u.playedPercentage+'%</span><div class="watch-meta">'+u.playCount+'× played'+(u.lastPlayedDate?' · '+fmtD(u.lastPlayedDate):'')+'</div></div>';
   return'<div><span class="watch-badge unwatched">✗ '+esc(u.userName)+'</span></div>';
 }
-function crumbs(c){$bc().innerHTML=c.map((x,i)=>i===c.length-1?'<span>'+esc(x.label)+'</span>':'<a onclick="nav(\''+x.hash+'\')">'+esc(x.label)+'</a><span class="sep">›</span>').join("");}
+function crumbs(c){
+  const bc=$bc();
+  if(!bc)return;
+  bc.innerHTML='';
+  c.forEach((x,i)=>{
+    if(i===c.length-1){
+      const span=document.createElement('span');
+      span.textContent=x.label==null?'':String(x.label);
+      bc.appendChild(span);
+    }else{
+      const a=document.createElement('a');
+      a.textContent=x.label==null?'':String(x.label);
+      a.addEventListener('click',()=>nav(x.hash));
+      bc.appendChild(a);
+      const sep=document.createElement('span');
+      sep.className='sep';
+      sep.textContent='›';
+      bc.appendChild(sep);
+    }
+  });
+}
 function isWatchedByAssigned(epUsers,assignedIds){
   if(!assignedIds)return epUsers.every(u=>u.played);
   const rel=epUsers.filter(u=>assignedIds.includes(u.userId));
