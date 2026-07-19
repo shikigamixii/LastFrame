@@ -1850,8 +1850,9 @@ def api_delete_item(item_id):
         jellyfin_delete(item_id)
         app.logger.info(f"Deleted item {item_id} from {request.remote_addr}")
         return jsonify({"success": True})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        app.logger.exception(f"Failed to delete item {item_id} from {request.remote_addr}")
+        return jsonify({"success": False, "error": "Failed to delete item"}), 500
 
 @app.route("/api/delete-batch", methods=["DELETE"])
 @limiter.limit("10 per minute")
