@@ -176,6 +176,7 @@ let _recentAllReqId=0;
 async function viewRecentAll(type,page){
   stopHomePolling();
   page=page||1;
+  if(type!=='movies'&&type!=='episodes'){viewLibraries();return;}
   const reqId=++_recentAllReqId;
   const isMovies=type==='movies';
   const title=isMovies?'Recently Watched Movies':'Recently Watched Episodes';
