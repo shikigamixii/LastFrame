@@ -75,7 +75,12 @@ async function route(){
     await ensureLib(p[1]);
     if(p.length===2)return viewGrid(p[1],1);
     if(p[2]==='p')return viewGrid(p[1],parseInt(p[3])||1);
-    if(p[2]==='s'&&p[3]){await ensureSeries(p[3]);if(!p[4])return viewSeasons(p[3]);await ensureSeason(p[4],p[3]);if(p[5]==='e'&&p[6])return viewEpisodeDetail(p[1],p[3],p[4],p[6]);return viewEpisodes(p[3],p[4]);}
+    if(p[2]==='s'&&p[3]){
+      const seriesId=p[3],seasonId=p[4];
+      const safeId=/^[A-Za-z0-9_-]+$/;
+      if(!safeId.test(seriesId)||(seasonId&&!safeId.test(seasonId)))return viewLibraries();
+      await ensureSeries(seriesId);if(!seasonId)return viewSeasons(seriesId);await ensureSeason(seasonId,seriesId);if(p[5]==='e'&&p[6])return viewEpisodeDetail(p[1],seriesId,seasonId,p[6]);return viewEpisodes(seriesId,seasonId);
+    }
     if(p[2]==='m'&&p[3]){await ensureItem(p[3]);return viewMovie(p[3]);}
   }
   viewLibraries();
