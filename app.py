@@ -1657,9 +1657,9 @@ def api_auto_delete_sweep():
     try:
         _run_sweep(cfg)
         return jsonify({"success": True, "message": "Sweep complete — check audit log for deletions."})
-    except Exception as e:
-        app.logger.warning(f"Manual sweep failed: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        app.logger.exception("Manual sweep failed")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @app.route("/api/auto-delete/diagnose/<rating_key>", methods=["GET"])
