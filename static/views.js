@@ -333,11 +333,13 @@ async function viewGrid(libId,page){
     fetchWatchSummary(libId,lib.type);
   }catch(e){el.innerHTML='<div class="empty-state">Error: '+esc(e.message)+'</div>';}
 }
+function sanitizeIdForClient(v){v=String(v||'');return /^[A-Za-z0-9_-]+$/.test(v)?v:'';}
 function renderGridItems(items,libId,lib){
   const typeLabel=lib.type==="movies"?"MOVIE":"TV";
   const pfx=lib.type==="movies"?"m":"s";
   const container=document.getElementById("gridItems");
   if(!container)return;
+  const safeLibId=sanitizeIdForClient(libId);
   const displayItems=(_showOnlyWatched&&_watchSummary)?items.filter(s=>{const ws=_watchSummary[s.id];return ws&&ws.total>0&&ws.watched===ws.total;}):items;
   let h='';
   for(const s of displayItems){
@@ -355,11 +357,12 @@ function renderGridItems(items,libId,lib){
       badgeHtml=`<div class="${cls}" data-watcher-ids="${escAttr(watcherIds.join(','))}" title="${escAttr(titleTip)}">${label}</div>`;
     }
     const overlayType=lib.type==="movies"?"movie":"series";
-    h+=`<div class="item-card" data-id="${s.id}" onclick="openItemOverlay('${libId}','${overlayType}','${s.id}')">
-      <div class="checkbox-overlay"><input type="checkbox" class="grid-checkbox" data-id="${s.id}" ${isSelected?'checked':''} onclick="event.stopPropagation();toggleItemSelection('${s.id}',this.checked)"></div>
+    const safeItemId=sanitizeIdForClient(s.id);
+    h+=`<div class="item-card" data-id="${safeItemId}" onclick="openItemOverlay('${safeLibId}','${overlayType}','${safeItemId}')">
+      <div class="checkbox-overlay"><input type="checkbox" class="grid-checkbox" data-id="${safeItemId}" ${isSelected?'checked':''} onclick="event.stopPropagation();toggleItemSelection('${safeItemId}',this.checked)"></div>
       ${badgeHtml}
       <div class="item-type-badge">${typeLabel}</div>
-      <img class="item-poster" src="/api/image/${s.id}?type=Primary&maxWidth=300" loading="lazy" onerror="this.style.display='none'">
+      <img class="item-poster" src="/api/image/${encodeURIComponent(safeItemId)}?type=Primary&maxWidth=300" loading="lazy" onerror="this.style.display='none'">
       <div class="item-overlay"><div class="item-overlay-title">${esc(cleanName(s.name))}</div>${s.year?`<div class="item-overlay-year">${s.year}</div>`:''}</div>
     </div>`;
   }
