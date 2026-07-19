@@ -796,8 +796,9 @@ def api_genres():
                             for g in mc.get("Directory", [])
                             if (g.get("title") or g.get("tag"))))
         return jsonify(genres)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        app.logger.exception("Failed to fetch genres")
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route("/api/seasons/<series_id>")
 @login_required_api
