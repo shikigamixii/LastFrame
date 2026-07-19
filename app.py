@@ -1866,8 +1866,9 @@ def api_delete_batch():
             jellyfin_delete(iid)
             deleted.append(iid)
             app.logger.info(f"Deleted batch item {iid} from {request.remote_addr}")
-        except Exception as e:
-            failed.append({"id": iid, "error": str(e)})
+        except Exception:
+            app.logger.exception(f"Failed to delete batch item {iid} from {request.remote_addr}")
+            failed.append({"id": iid, "error": "Failed to delete item"})
     return jsonify({"success": True, "deleted": deleted, "failed": failed})
 
 @app.route("/api/check-season-empty/<series_id>/<season_id>")
