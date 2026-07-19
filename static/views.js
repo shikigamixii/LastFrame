@@ -212,7 +212,7 @@ function renderRecentlyAddedItems(items){
   if(!items||!items.length)return '<div class="empty-state">Nothing new right now. Newly added movies and TV series will appear here.</div>';
   return items.map(item=>{
     const typeLabel=item.type==='movie'?'MOVIE':'TV';
-    return `<div class="item-card" style="width:148px" onclick="openItemOverlay('${item.libId}','${item.type}','${item.id}')">
+    return `<div class="item-card" style="width:148px" onclick="openItemOverlay('${sanitizeIdForClient(item.libId)}','${item.type}','${sanitizeIdForClient(item.id)}')">
       <div class="item-type-badge">${typeLabel}</div>
       <img class="item-poster" src="/api/image/${item.id}?type=Primary&maxWidth=300" loading="lazy" onerror="this.style.display='none'">
       <div class="item-overlay"><div class="item-overlay-title">${esc(cleanName(item.name||''))}</div>${item.year?`<div class="item-overlay-year">${item.year}</div>`:''}</div>
@@ -333,7 +333,6 @@ async function viewGrid(libId,page){
     fetchWatchSummary(libId,lib.type);
   }catch(e){el.innerHTML='<div class="empty-state">Error: '+esc(e.message)+'</div>';}
 }
-function sanitizeIdForClient(v){v=String(v||'');return /^[A-Za-z0-9_-]+$/.test(v)?v:'';}
 function renderGridItems(items,libId,lib){
   const typeLabel=lib.type==="movies"?"MOVIE":"TV";
   const pfx=lib.type==="movies"?"m":"s";
@@ -568,7 +567,7 @@ function renderAssignPanel(itemId,assignData,isSeries=true){
   if(isSeries)h+='<div class="assign-scope">✓ Applies to all seasons and future episodes of this series.</div>';
   h+='<div class="assign-users" id="assignUsers">';
   for(const u of S.users){const on=mode==="all"||assigned.has(u.id);h+='<div class="assign-chip '+(on?"on":"")+'" data-uid="'+u.id+'" onclick="this.classList.toggle(\'on\')">'+esc(u.name)+'</div>';}
-  h+='</div><div class="assign-actions"><button class="btn-save" onclick="saveAssign(\''+itemId+'\')">Save</button><button onclick="resetAssign(\''+itemId+'\')">Reset to All</button><span class="assign-status" id="assignStatus">Saved!</span></div></div>';
+  h+='</div><div class="assign-actions"><button class="btn-save" onclick="saveAssign(\''+sanitizeIdForClient(itemId)+'\')">Save</button><button onclick="resetAssign(\''+sanitizeIdForClient(itemId)+'\')">Reset to All</button><span class="assign-status" id="assignStatus">Saved!</span></div></div>';
   return h;
 }
 function invalidateWatchSummaryCache(){_watchSummary=null;_watchSummaryLibId=null;_recentWatchSummary=null;}
@@ -636,7 +635,7 @@ async function _buildMovieDetailHtml(movieId){
   let displayUsers=ws;if(assign.mode==="custom"&&assign.assigned.length){const a=new Set(assign.assigned);displayUsers=ws.filter(u=>a.has(u.userId));}
   const allW=isWatchedByAssigned(ws,S.assignedIds);
   let h=renderAssignPanel(movieId,assign,false);
-  h+='<div class="movie-detail"><div class="movie-detail-header"><div class="movie-detail-poster"><img src="/api/image/'+movieId+'?type=Primary&maxWidth=400" onerror="this.parentElement.innerHTML=\'🎬\'" alt=""></div><div class="movie-detail-info"><h2>'+esc(it.name)+(allW?'<span class="all-watched-tag">All Watched</span>':'')+'</h2>'+(it.year?'<div class="year">'+it.year+'</div>':'')+renderAutoDeleteBadge(adStatus,movieId,'movie')+'<div style="margin-top:1rem"><button class="btn-delete-bulk" onclick="deleteMovie(\''+movieId+'\')">Delete Movie</button></div></div></div><div class="movie-watch-list">';
+  h+='<div class="movie-detail"><div class="movie-detail-header"><div class="movie-detail-poster"><img src="/api/image/'+movieId+'?type=Primary&maxWidth=400" onerror="this.parentElement.innerHTML=\'🎬\'" alt=""></div><div class="movie-detail-info"><h2>'+esc(it.name)+(allW?'<span class="all-watched-tag">All Watched</span>':'')+'</h2>'+(it.year?'<div class="year">'+it.year+'</div>':'')+renderAutoDeleteBadge(adStatus,movieId,'movie')+'<div style="margin-top:1rem"><button class="btn-delete-bulk" onclick="deleteMovie(\''+sanitizeIdForClient(movieId)+'\')">Delete Movie</button></div></div></div><div class="movie-watch-list">';
   for(const u of displayUsers)h+='<div class="movie-watch-item">'+badge(u)+'</div>';
   h+='</div></div>';
   return h;
@@ -658,7 +657,7 @@ async function _buildSeriesDetailHtml(seriesId){
     const completedUsers=s.completedUsers||0,totalUsers=s.totalAssignedUsers||S.users.length,percent=totalUsers?(completedUsers/totalUsers)*100:0;
     let tooltipLines=[];if(s.userProgress&&s.userProgress.length){for(const up of s.userProgress){tooltipLines.push(`${up.userName}: ${up.playedCount}/${up.totalCount} ${up.completed?'✓':''}`);}}
     const tooltipText=tooltipLines.join('\n');
-    h+=`<div class="season-item"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="season-item-name" onclick="navFromOverlay('/lib/${libId}/s/${seriesId}/${s.id}')">${esc(s.name)}</span><button class="btn-delete" onclick="deleteSeason('${s.id}','${seriesId}')">Delete</button></div><div style="margin-top:8px;" title="${escAttr(tooltipText)}"><div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;"><span>${completedUsers}/${totalUsers} users completed</span><span>${Math.round(percent)}%</span></div><div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;"><div style="width:${percent}%;background:var(--green);height:100%;border-radius:4px;"></div></div></div></div>`;
+    h+=`<div class="season-item"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="season-item-name" onclick="navFromOverlay('/lib/${sanitizeIdForClient(libId)}/s/${sanitizeIdForClient(seriesId)}/${sanitizeIdForClient(s.id)}')">${esc(s.name)}</span><button class="btn-delete" onclick="deleteSeason('${sanitizeIdForClient(s.id)}','${sanitizeIdForClient(seriesId)}')">Delete</button></div><div style="margin-top:8px;" title="${escAttr(tooltipText)}"><div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;"><span>${completedUsers}/${totalUsers} users completed</span><span>${Math.round(percent)}%</span></div><div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;"><div style="width:${percent}%;background:var(--green);height:100%;border-radius:4px;"></div></div></div></div>`;
   }
   h+='</div>';
   return h;
@@ -677,7 +676,7 @@ async function viewMovie(movieId){
     let displayUsers=ws;if(assign.mode==="custom"&&assign.assigned.length){const assignedSet=new Set(assign.assigned);displayUsers=ws.filter(u=>assignedSet.has(u.userId));}
     const allW=isWatchedByAssigned(ws,S.assignedIds);
     let h=renderAssignPanel(movieId,assign,false);
-    h+='<div class="movie-detail"><div class="movie-detail-header"><div class="movie-detail-poster"><img src="/api/image/'+encodeURIComponent(movieId)+'?type=Primary&maxWidth=400" onerror="this.parentElement.innerHTML=\'🎬\'" alt=""></div><div class="movie-detail-info"><h2>'+esc(it.name)+(allW?'<span class="all-watched-tag">All Watched</span>':'')+'</h2>'+(it.year?'<div class="year">'+it.year+'</div>':'')+renderAutoDeleteBadge(adStatus,movieId,'movie')+'<div style="margin-top:1rem"><button class="btn-delete-bulk" onclick="deleteMovie(\''+movieId+'\')">Delete Movie</button></div></div></div><div class="movie-watch-list">';
+    h+='<div class="movie-detail"><div class="movie-detail-header"><div class="movie-detail-poster"><img src="/api/image/'+encodeURIComponent(movieId)+'?type=Primary&maxWidth=400" onerror="this.parentElement.innerHTML=\'🎬\'" alt=""></div><div class="movie-detail-info"><h2>'+esc(it.name)+(allW?'<span class="all-watched-tag">All Watched</span>':'')+'</h2>'+(it.year?'<div class="year">'+it.year+'</div>':'')+renderAutoDeleteBadge(adStatus,movieId,'movie')+'<div style="margin-top:1rem"><button class="btn-delete-bulk" onclick="deleteMovie(\''+sanitizeIdForClient(movieId)+'\')">Delete Movie</button></div></div></div><div class="movie-watch-list">';
     for(const u of displayUsers)h+='<div class="movie-watch-item">'+badge(u)+'</div>';
     h+='</div></div>';el.innerHTML=h;
   }catch(e){el.innerHTML='<div class="empty-state">Error: '+esc(e.message)+'</div>';}
@@ -698,7 +697,7 @@ async function viewSeasons(seriesId){
       const totalEp=s.totalEpisodes||0,completedUsers=s.completedUsers||0,totalUsers=s.totalAssignedUsers||S.users.length,percent=totalUsers?(completedUsers/totalUsers)*100:0;
       let tooltipLines=[];if(s.userProgress&&s.userProgress.length){for(const up of s.userProgress){tooltipLines.push(`${up.userName}: ${up.playedCount}/${up.totalCount} ${up.completed?'✓':''}`);}}
       const tooltipText=tooltipLines.join('\n');
-      h+=`<div class="season-item"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="season-item-name" onclick="nav('/lib/${lib.id}/s/${seriesId}/${s.id}')">${esc(s.name)}</span><button class="btn-delete" onclick="deleteSeason('${s.id}','${seriesId}')">Delete</button></div><div style="margin-top:8px;" title="${escAttr(tooltipText)}"><div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;"><span>${completedUsers}/${totalUsers} users completed</span><span>${Math.round(percent)}%</span></div><div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;"><div style="width:${percent}%;background:var(--green);height:100%;border-radius:4px;"></div></div></div></div>`;
+      h+=`<div class="season-item"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="season-item-name" onclick="nav('/lib/${sanitizeIdForClient(lib.id)}/s/${sanitizeIdForClient(seriesId)}/${sanitizeIdForClient(s.id)}')">${esc(s.name)}</span><button class="btn-delete" onclick="deleteSeason('${sanitizeIdForClient(s.id)}','${sanitizeIdForClient(seriesId)}')">Delete</button></div><div style="margin-top:8px;" title="${escAttr(tooltipText)}"><div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;"><span>${completedUsers}/${totalUsers} users completed</span><span>${Math.round(percent)}%</span></div><div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;"><div style="width:${percent}%;background:var(--green);height:100%;border-radius:4px;"></div></div></div></div>`;
     }
     h+='</div>';el.innerHTML=h;
   }catch(e){el.innerHTML='<div class="empty-state">Error: '+esc(e.message)+'</div>';}
@@ -734,7 +733,7 @@ async function viewEpisodes(seriesId,seasonId){
     let h=posterHtml+'<div class="watch-summary"><div><strong>'+watchedAll+'</strong> of <strong>'+total+'</strong> watched by '+(S.assignedIds?'assigned users':'all users')+(watchedAll===total?' — <span style="color:var(--green)">safe to delete</span>':'')+'</div>'+(watchedAll>0?'<button class="btn-delete-bulk" onclick="deleteAllWatched()">Delete '+watchedAll+' watched</button>':'')+'</div>';
     h+='<div class="selection-toolbar"><button onclick="selectAll()">Select All</button><button onclick="selectWatched()">Select Watched</button><button onclick="selectNone()">Deselect All</button><span id="selCount" style="color:var(--text-muted)">0 selected</span><button class="delete-selected" id="btnDelSel" disabled onclick="deleteSelected()">Delete Selected</button></div>';
     h+='<div class="table-wrap"><table class="episode-table"><thead><tr><th style="width:30px"><input type="checkbox" class="ep-checkbox" onchange="toggleAll(this.checked)"></th><th>Episode</th>'+uNames.map(n=>'<th class="watch-cell">'+esc(n)+'</th>').join('')+'<th>Actions</th></tr></thead><tbody>';
-    for(const ep of episodes){const allD=S.episodes[ep.id].allWatched,umap={};ep.users.forEach(u=>{umap[u.userName]=u;});h+='<tr id="ep-'+ep.id+'"><td><input type="checkbox" class="ep-checkbox" data-ep-id="'+ep.id+'" onchange="updateSelCount()"></td><td><span class="ep-num">E'+String(ep.indexNumber).padStart(2,"0")+'</span><span class="ep-name">'+esc(ep.name)+'</span>'+(ep.runTimeTicks?'<span class="ep-runtime">('+fmtT(ep.runTimeTicks)+')</span>':'')+(allD?'<span class="all-watched-tag">All</span>':'')+'</td>';for(const n of uNames){const u=umap[n];h+='<td class="watch-cell">'+(u?badge(u):'<span class="watch-badge unwatched">—</span>')+'</td>';}h+='<td><button class="btn-delete" onclick="deleteEpisode(\''+ep.id+'\')">Delete</button></td>';}
+    for(const ep of episodes){const allD=S.episodes[ep.id].allWatched,umap={};ep.users.forEach(u=>{umap[u.userName]=u;});h+='<tr id="ep-'+ep.id+'"><td><input type="checkbox" class="ep-checkbox" data-ep-id="'+ep.id+'" onchange="updateSelCount()"></td><td><span class="ep-num">E'+String(ep.indexNumber).padStart(2,"0")+'</span><span class="ep-name">'+esc(ep.name)+'</span>'+(ep.runTimeTicks?'<span class="ep-runtime">('+fmtT(ep.runTimeTicks)+')</span>':'')+(allD?'<span class="all-watched-tag">All</span>':'')+'</td>';for(const n of uNames){const u=umap[n];h+='<td class="watch-cell">'+(u?badge(u):'<span class="watch-badge unwatched">—</span>')+'</td>';}h+='<td><button class="btn-delete" onclick="deleteEpisode(\''+sanitizeIdForClient(ep.id)+'\')">Delete</button></td>';}
     h+='</tbody></table></div>';el.innerHTML=h;
   }catch(e){el.innerHTML='<div class="empty-state">Error: '+esc(e.message)+'</div>';}
 }
@@ -805,11 +804,11 @@ function renderAutoDeleteBadge(adStatus, id, type='series'){
       label='Auto-delete: Paused (global off) — override saved';style='color:var(--text-muted)';
     }
     nextEnabled=false;nextLabel=`Disable for this ${itemWord}`;
-    clearBtn=`<button class="btn-cancel" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${id}',null)">Clear override</button>`;
+    clearBtn=`<button class="btn-cancel" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${sanitizeIdForClient(id)}',null)">Clear override</button>`;
   } else if(ov===false){
     label='Auto-delete: OFF (override)';style='color:var(--red)';
     nextEnabled=true;nextLabel=`Enable for this ${itemWord}`;
-    clearBtn=`<button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${id}',null)">Clear override</button>`;
+    clearBtn=`<button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${sanitizeIdForClient(id)}',null)">Clear override</button>`;
   } else if(eff){
     if(globalOn){
       label=`Auto-delete: ON (library)${graceNote}`;style='color:var(--green)';
@@ -824,7 +823,7 @@ function renderAutoDeleteBadge(adStatus, id, type='series'){
   }
   const sweepBtn=globalOn&&(ov===true||eff)?`<button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="runAutoDeleteSweep(this)">Run sweep now</button>`:'';
   return `<div style="margin-top:0.5rem;font-size:0.78rem;${style}">${label}
-    <button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${id}',${nextEnabled})">${nextLabel}</button>${clearBtn}${sweepBtn}</div>`;
+    <button class="btn-settings" style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.72rem" onclick="${setterFn}('${sanitizeIdForClient(id)}',${nextEnabled})">${nextLabel}</button>${clearBtn}${sweepBtn}</div>`;
 }
 async function setAutoDeleteSeries(seriesId,enabled){
   const resp=await api('/api/auto-delete/series/'+seriesId,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});
