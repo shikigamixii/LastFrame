@@ -92,17 +92,17 @@ async function route(){
     return viewRecentAll(p[1],1);
   }
   if(p[0]==='lib'&&p[1]){
+    const safeId=/^[A-Za-z0-9_-]+$/;
+    if(!safeId.test(p[1]))return viewLibraries();
     await ensureLib(p[1]);
     if(p.length===2)return viewGrid(p[1],1);
     if(p[2]==='p')return viewGrid(p[1],parseInt(p[3])||1);
     if(p[2]==='s'&&p[3]){
       const seriesId=p[3],seasonId=p[4];
-      const safeId=/^[A-Za-z0-9_-]+$/;
       if(!safeId.test(seriesId)||(seasonId&&!safeId.test(seasonId)))return viewLibraries();
       await ensureSeries(seriesId);if(!seasonId)return viewSeasons(seriesId);await ensureSeason(seasonId,seriesId);if(p[5]==='e'&&p[6])return viewEpisodeDetail(p[1],seriesId,seasonId,p[6]);return viewEpisodes(seriesId,seasonId);
     }
     if(p[2]==='m'&&p[3]){
-      const safeId=/^[A-Za-z0-9_-]+$/;
       if(!safeId.test(p[3]))return viewLibraries();
       await ensureItem(p[3]);return viewMovie(p[3]);
     }
