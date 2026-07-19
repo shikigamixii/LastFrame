@@ -36,16 +36,16 @@ Follow them exactly.
 
 ## Branch rules
 
-- I own the `feature/plex`, `feature/develop` and `feature/jellyfin` branches.
-- Perform all work on the `feature/develop` branch.
+- I own the `feature/plex`, `develop` and `feature/jellyfin` branches.
+- Perform all work on the `develop` branch.
 - Do not create, use, or develop on any `claude/*` branches.
-- At the start of every session, fetch `feature/develop`.
+- At the start of every session, fetch `develop`.
 
 ## Required startup steps
 
 1. Check the current branch.
-2. Fetch the latest remote state for `feature/develop`.
-3. Switch to `feature/develop` before making changes.
+2. Fetch the latest remote state for `develop`.
+3. Switch to `develop` before making changes.
 4. Confirm the working tree status before editing.
 
 ## Deployment topology
@@ -101,7 +101,7 @@ Follow them exactly.
    editing.
 2. If the request is ambiguous, stop and ask for clarification before
    changing files.
-3. Make the minimal correct change on `feature/develop`.
+3. Make the minimal correct change on `develop`.
 4. Review the changed files carefully.
 5. Run appropriate checks based on the project. If exact commands are
    not documented, infer the safest available commands from the
@@ -150,7 +150,7 @@ When reporting progress or completion, use this format:
    - Briefly describe what changed.
 
 2. Branches
-   - State what was done on `feature/develop`.
+   - State what was done on `develop`.
    - If anything did not apply, explain why.
 
 3. Validation
@@ -169,7 +169,7 @@ When reporting progress or completion, use this format:
 
 Before saying the task is complete, double-check:
 
-- Work was performed on `feature/develop`.
+- Work was performed on `develop`.
 - No `claude/*` branch was created or used.
 - No secrets, tokens, passwords, API keys, emails, or personal
   information were introduced.
