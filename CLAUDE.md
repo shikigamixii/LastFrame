@@ -119,19 +119,11 @@ Follow them exactly.
 
 ## Branch sync workflow
 
-- After completing and validating work on `feature/plex`, switch to
-  `feature/jellyfin`.
-- Apply equivalent changes to `feature/jellyfin`.
 - Do not assume the branches are identical.
-- Inspect the target files on `feature/jellyfin` before applying
+- Inspect the target files on `develop` before applying
   changes.
 - If conflicts or differences require judgment, stop and ask before
   proceeding.
-- If a change from `feature/plex` does not apply to `feature/jellyfin`,
-  explicitly state:
-  - What did not apply.
-  - Why it did not apply.
-  - Whether any alternative change was made.
 
 ## Git rules
 
