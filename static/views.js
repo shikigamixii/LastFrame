@@ -541,9 +541,10 @@ function renderGenreChips(genres,libId){
   const container=document.getElementById("genreChips");
   if(!container)return;
   if(!genres||!genres.length){container.innerHTML='';return;}
-  let h=`<span class="genre-chip all-chip${!_activeGenre?' active':''}" data-genre="" data-libid="${libId}">All</span>`;
+  const safeLibId=escAttr(String(libId));
+  let h=`<span class="genre-chip all-chip${!_activeGenre?' active':''}" data-genre="" data-libid="${safeLibId}">All</span>`;
   for(const g of genres){
-    h+=`<span class="genre-chip${_activeGenre===g?' active':''}" data-genre="${escAttr(g)}" data-libid="${libId}">${esc(g)}</span>`;
+    h+=`<span class="genre-chip${_activeGenre===g?' active':''}" data-genre="${escAttr(g)}" data-libid="${safeLibId}">${esc(g)}</span>`;
   }
   container.innerHTML=h;
   container.querySelectorAll('.genre-chip').forEach(el=>{
