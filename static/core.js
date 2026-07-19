@@ -27,6 +27,9 @@ function esc(s){const d=document.createElement("div");d.textContent=s;return d.i
 // break out of the attribute). Use escAttr() for anything interpolated into
 // an attribute: title="...", value="...", data-*="...".
 function escAttr(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+// Allowlist for IDs interpolated into inline handlers or URLs: returns the
+// value only when it is a plain ID (letters, digits, _ or -), otherwise "".
+function sanitizeIdForClient(v){v=String(v||'');return /^[A-Za-z0-9_-]+$/.test(v)?v:'';}
 function cleanName(s){return s.replace(/\s*\{[^}]+\}/g,'').trim();}
 function badge(u){
   if(u.played)return'<div><span class="watch-badge watched">✓ '+esc(u.userName)+'</span><div class="watch-meta">'+u.playCount+'× played'+(u.lastPlayedDate?' · '+fmtD(u.lastPlayedDate):'')+'</div></div>';
@@ -72,7 +75,7 @@ function renderSidebar(){
     const libHash='#/lib/'+lib.id;
     const active=hash.startsWith(libHash)?' active':'';
     const icon=lib.type==='tvshows'?'📺':'🎬';
-    h+=`<div class="sidebar-nav-item${active}" onclick="nav('/lib/${lib.id}')"><span class="nav-icon">${icon}</span><span class="nav-label">${esc(lib.name)}</span></div>`;
+    h+=`<div class="sidebar-nav-item${active}" onclick="nav('/lib/${sanitizeIdForClient(lib.id)}')"><span class="nav-icon">${icon}</span><span class="nav-label">${esc(lib.name)}</span></div>`;
   }
   nav.innerHTML=h;
 }
