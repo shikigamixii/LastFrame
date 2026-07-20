@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+.dockerignore
+.env
+venv/
+.venv/
+start.sh
+config.json
+data.db
+audit.log
+*.md

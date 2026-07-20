@@ -2,3 +2,9 @@
 venv/
 __pycache__/
 *.pyc
+# Runtime data (created next to the app when DATA_DIR is unset) — may contain
+# tokens/API keys, so never commit these.
+config.json
+data.db
+audit.log
+.env

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<title>LastFrame — Setup</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:rgba(0,0,0,.96);margin:0;padding:1rem;box-sizing:border-box}
+.prov-hint{font-size:0.78rem;color:var(--text-muted);margin-bottom:0.75rem}
+.sec-label{font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:0.75rem}
+</style>
+</head>
+<body>
+<div class="login-card" style="max-width:480px;width:100%;max-height:90vh;overflow-y:auto">
+  <h2>Welcome to LastFrame</h2>
+  <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:1.5rem;text-align:center">Complete first-time setup to get started</p>
+
+  <div class="sec-label">Admin Account</div>
+  <input type="text" id="setupUsername" placeholder="Username (default: admin)" autocomplete="username">
+  <input type="password" id="setupPassword" placeholder="Password (min. 8 characters)" autocomplete="new-password">
+  <input type="password" id="setupConfirmPassword" placeholder="Confirm password" autocomplete="new-password">
+
+  <div style="margin-top:0.75rem;padding:0.6rem 0.75rem;border:1px solid var(--border);border-radius:8px;background:var(--bg-primary);font-size:0.8rem;color:var(--text-muted)">
+    Configure Plex, Jellyfin, or both. You need at least one. You can add or switch the other later in Settings.
+  </div>
+
+  <div style="margin-top:1.25rem">
+    <div class="sec-label">Plex Server <span style="text-transform:none;font-weight:400;color:var(--text-muted)">(optional)</span></div>
+    <div id="setupPlexFields">
+      <input type="text" id="setupPlexUrl" placeholder="Plex Server URL (e.g. https://xxx.plex.direct:32400)" style="margin-bottom:0.75rem">
+      <input type="password" id="setupPlexToken" placeholder="Plex Token">
+    </div>
+  </div>
+
+  <div style="margin-top:1.25rem">
+    <div class="sec-label">Jellyfin Server <span style="text-transform:none;font-weight:400;color:var(--text-muted)">(optional)</span></div>
+    <div id="setupJellyfinFields">
+      <input type="text" id="setupJellyfinUrl" placeholder="Jellyfin Server URL (e.g. http://127.0.0.1:8096)" style="margin-bottom:0.75rem">
+      <input type="password" id="setupJellyfinApiKey" placeholder="API Key">
+    </div>
+  </div>
+
+  <div style="margin-top:1.25rem">
+    <div class="sec-label">Webhook Secret</div>
+    <div id="setupWebhookField"><input type="text" id="setupWebhookSecret" placeholder="At least 16 characters — append ?secret=… to the webhook URL"></div>
+  </div>
+
+  <button id="setupBtn" onclick="doSetup()" style="margin-top:1.5rem">Complete Setup</button>
+  <div id="setupError" class="error"></div>
+</div>
+<script>
+(async()=>{
+  try{
+    const d=await fetch('/api/auth/status').then(r=>r.json());
+    if(!d.needs_setup){location.href='/';return;}
+    const esc=v=>(v||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+    const inp=(id,ph,val,type='text')=>`<input type="${type}" id="${id}" placeholder="${ph}" value="${esc(val)}" style="margin-bottom:0.75rem">`;
+    const ok='<div style="font-size:0.8rem;color:var(--green,#4ade80);margin-bottom:0.75rem">&#x2713; configured via environment variable</div>';
+
+    const px=document.getElementById('setupPlexFields');
+    if(d.plex_token_set){
+      px.innerHTML=ok+inp('setupPlexUrl','Plex URL (optional override)',d.plex_url_from_env);
+    }else{
+      px.innerHTML=inp('setupPlexUrl','Plex Server URL (e.g. https://xxx.plex.direct:32400)',d.plex_url_from_env)+inp('setupPlexToken','Plex Token','','password');
+    }
+
+    const jf=document.getElementById('setupJellyfinFields');
+    if(d.jellyfin_api_key_set){
+      jf.innerHTML=ok+inp('setupJellyfinUrl','Jellyfin URL (optional override)',d.jellyfin_url_from_env);
+    }else{
+      jf.innerHTML=inp('setupJellyfinUrl','Jellyfin Server URL (e.g. http://127.0.0.1:8096)',d.jellyfin_url_from_env)+inp('setupJellyfinApiKey','API Key','','password');
+    }
+
+    if(d.webhook_secret_set){
+      document.getElementById('setupWebhookField').innerHTML='<div style="font-size:0.8rem;color:var(--green,#4ade80)">&#x2713; Webhook secret configured via environment variable</div>';
+    }
+  }catch(e){}
+})();
+
+async function doSetup(){
+  const btn=document.getElementById('setupBtn');
+  const err=document.getElementById('setupError');
+  const g=id=>{const el=document.getElementById(id);return el?el.value.trim():''};
+  const body={
+    username:g('setupUsername')||'admin',
+    password:document.getElementById('setupPassword').value,
+    confirm_password:document.getElementById('setupConfirmPassword').value,
+    plex_url:g('setupPlexUrl'),
+    plex_token:g('setupPlexToken'),
+    jellyfin_url:g('setupJellyfinUrl'),
+    jellyfin_api_key:g('setupJellyfinApiKey'),
+    webhook_secret:g('setupWebhookSecret'),
+  };
+  btn.disabled=true;btn.textContent='Setting up…';err.textContent='';
+  const csrf=(document.querySelector('meta[name="csrf-token"]')||{}).content||'';
+  try{
+    const resp=await fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf},body:JSON.stringify(body)});
+    const data=await resp.json();
+    if(!resp.ok||!data.success){err.textContent=data.error||'Setup failed';btn.disabled=false;btn.textContent='Complete Setup';return;}
+    location.href='/';
+  }catch(e){err.textContent='Setup failed: '+e.message;btn.disabled=false;btn.textContent='Complete Setup';}
+}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!document.getElementById('setupBtn').disabled)doSetup();});
+</script>
+</body>
+</html>
