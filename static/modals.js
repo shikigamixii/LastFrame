@@ -62,11 +62,28 @@ async function openSettings(){
   S.config=cfg;
   // Providers section — enable/disable each media server independently.
   let h='<h3>Media Servers</h3>';
-  h+='<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.6rem">Turn a server off to stop querying it and hide its libraries and users. Credentials are set during first-time setup or via environment variables.</div>';
+  h+='<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.6rem">Turn a server off to stop querying it and hide its libraries and users. Set or update each server\'s connection details below. Credentials supplied via environment variables take precedence and can\'t be overridden here.</div>';
+  // Per-provider credential editors. Field names match the keys accepted by
+  // POST /api/config, which only overwrites a value when a non-empty one is
+  // sent — so leaving the secret box blank keeps the stored credential.
+  const provCredFields={
+    plex:{url:"plex_url",secret:"plex_token",secretLabel:"Plex Token",urlPh:"Plex Server URL (e.g. https://xxx.plex.direct:32400)"},
+    jellyfin:{url:"jellyfin_url",secret:"jellyfin_api_key",secretLabel:"API Key",urlPh:"Jellyfin Server URL (e.g. https://jellyfin.example.com)"}
+  };
+  const credInputStyle="width:100%;padding:0.4rem 0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:0.82rem;box-sizing:border-box";
   for(const p of provs){
-    const status=p.configured?(p.enabled?'':'configured'):'not configured';
     h+='<div class="lib-toggle"><div><div class="lib-toggle-name">'+esc(p.label)+'</div><div class="lib-toggle-type">'+(p.configured?'':'credentials not set')+'</div></div>';
     h+='<div class="toggle-switch prov-toggle '+(p.enabled?"on":"")+'" data-prov-key="'+esc(p.key)+'" '+(p.configured?'onclick="this.classList.toggle(\'on\')"':'style="opacity:0.4;pointer-events:none"')+'></div></div>';
+    const cf=provCredFields[p.key];
+    if(cf){
+      // The secret box is never pre-filled with the stored token — the admin
+      // types a new value only when they want to change it.
+      h+='<div style="margin:0.4rem 0 1rem">';
+      h+='<input class="prov-cred" data-cfg-field="'+esc(cf.url)+'" type="text" value="'+escAttr(cfg[cf.url]||"")+'" placeholder="'+escAttr(cf.urlPh)+'" style="'+credInputStyle+';margin-bottom:0.4rem">';
+      h+='<input class="prov-cred" data-cfg-field="'+esc(cf.secret)+'" type="password" autocomplete="new-password" placeholder="'+escAttr(cf.secretLabel+(p.configured?" — leave blank to keep current":""))+'" style="'+credInputStyle+'">';
+      if(!p.configured)h+='<div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.3rem">Enter credentials and Save, then re-open Settings to enable this server.</div>';
+      h+='</div>';
+    }
   }
   h+='<div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1rem"></div>';
   h+='<h3>Select Libraries to Monitor</h3>';
@@ -179,6 +196,12 @@ async function saveSettings(){
   // Provider enable/disable toggles.
   document.querySelectorAll("#settingsBody .prov-toggle").forEach(t=>{
     if(t.dataset.provKey)cfg[t.dataset.provKey+"_enabled"]=t.classList.contains("on");
+  });
+  // Provider credentials (URL / token). Only send fields the admin actually
+  // filled in; the backend leaves stored values untouched for empty ones.
+  document.querySelectorAll("#settingsBody .prov-cred").forEach(inp=>{
+    const f=inp.dataset.cfgField,v=(inp.value||"").trim();
+    if(f&&v)cfg[f]=v;
   });
   await api("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)});
   S.config=cfg;S.libraries=[];closeSettings();nav('/');
