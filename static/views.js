@@ -298,7 +298,8 @@ let _activeGenre=null, _showOnlyWatched=false, _watchSummary=null, _watchSummary
 async function viewGrid(libId,page){
   stopHomePolling();
   page=page||1;
-  if(_currentLibId!==libId){_activeGenre=null;_showOnlyWatched=false;_watchSummary=null;_watchSummaryLibId=null;_currentPaginationData=null;S.selectedItemIds.clear();}
+  if(_currentLibId!==libId){_activeGenre=null;_showOnlyWatched=false;_watchSummary=null;_watchSummaryLibId=null;_currentPaginationData=null;}
+  S.selectedItemIds.clear();
   _currentLibId=libId;_currentPage=page;
   const el=$el();el.innerHTML='<div class="loading">Loading</div>';const lib=S.lib;
   crumbs([{label:"Libraries",hash:"/"},{label:lib.name,hash:"/lib/"+libId}]);
