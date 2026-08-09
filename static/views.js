@@ -578,14 +578,22 @@ async function saveAssign(itemId){
   if(on.length===S.users.length){await api("/api/assignments/"+itemId,{method:"DELETE"});S.assignedIds=null;}
   else{await api("/api/assignments/"+itemId,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userIds:on})});S.assignedIds=on;}
   invalidateWatchSummaryCache();
-  const st=$("#assignStatus");if(st){st.classList.add("show");setTimeout(()=>st.classList.remove("show"),2000);}
   await refreshAfterAssign();
+  showAssignSaved();
 }
 async function resetAssign(itemId){
   await api("/api/assignments/"+itemId,{method:"DELETE"});S.assignedIds=null;
   invalidateWatchSummaryCache();
-  const st=$("#assignStatus");if(st){st.classList.add("show");setTimeout(()=>st.classList.remove("show"),2000);}
   await refreshAfterAssign();
+  showAssignSaved();
+}
+// refreshAfterAssign() re-renders the whole panel, which replaces the
+// #assignStatus element — so the "Saved!" flash has to be applied to the
+// freshly rendered element *after* the refresh, not the one about to be
+// destroyed (otherwise the confirmation never appears).
+function showAssignSaved(){
+  const st=$("#assignStatus");
+  if(st){st.classList.add("show");setTimeout(()=>st.classList.remove("show"),2000);}
 }
 async function refreshAfterAssign(){
   refreshRecentlyAddedRow();
