@@ -40,6 +40,9 @@ Follow them exactly.
 - Perform all work on the `develop` branch.
 - Do not create, use, or develop on any `claude/*` branches.
 - At the start of every session, fetch `develop`.
+- Treat `feature/plex` and `feature/jellyfin` as the stable branches.
+  When working out a fix, reference these branches for known-good,
+  working solutions before changing code on `develop`.
 
 ## Required startup steps
 
