@@ -35,7 +35,7 @@ def get_webhook_secret():
     return os.environ.get("JELLYFIN_WEBHOOK_SECRET") or load_config().get("webhook_secret", "")
 
 def _jf_headers():
-    return {"Accept": "application/json", "X-Emby-Token": get_jellyfin_api_key()}
+    return {"Accept": "application/json", "Authorization": f'MediaBrowser Token="{get_jellyfin_api_key()}"'}
 
 def jellyfin_get(path, params=None):
     t0 = time.monotonic()
