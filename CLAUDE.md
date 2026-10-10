@@ -36,9 +36,13 @@ Follow them exactly.
 
 ## Branch rules
 
-- I own the `feature/plex`, `develop` and `feature/jellyfin` branches.
+- I own the `feature/plex`, `develop`, `feature/jellyfin` and `stable`
+  branches.
 - Perform all work on the `develop` branch.
 - Do not create, use, or develop on any `claude/*` branches.
+- The `stable` branch is read-only. Never commit, push, merge, rebase,
+  reset, or otherwise update or perform any work on `stable` unless I
+  explicitly instruct you to update it. Reading or diffing it is allowed.
 - At the start of every session, fetch `develop`.
 - Treat `feature/plex` and `feature/jellyfin` as the stable branches.
   When working out a fix, reference these branches for known-good,
