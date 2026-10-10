@@ -10,6 +10,7 @@ import os, sys, secrets, logging, re, hmac, threading, time
 from datetime import datetime, timezone
 from flask import Flask, render_template, jsonify, request, session, abort, redirect, url_for, g
 import bcrypt
+import requests as http_requests
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -87,12 +88,39 @@ def _security_headers(resp):
 limiter = Limiter(get_remote_address, app=app,
                   default_limits=["2000 per day", "500 per hour"], storage_uri="memory://")
 
+# Media-server credentials can end up in log text: Plex takes its token as a
+# URL query param, and requests puts the full URL in HTTPError messages.
+_SECRET_PATTERNS = (
+    re.compile(r'((?:X-Plex-Token|X-Emby-Token|api_key|ApiKey)[\'"]?\s*[:=]\s*[\'"]?)[^&\s\'",}]+', re.I),
+    re.compile(r'(MediaBrowser\s+Token=")[^"]*', re.I),
+)
+
+
+def _redact(text):
+    for pat in _SECRET_PATTERNS:
+        text = pat.sub(r'\1[REDACTED]', text)
+    return text
+
+
+class _RedactFilter(logging.Filter):
+    def filter(self, record):
+        record.msg = _redact(record.getMessage())
+        record.args = None
+        if record.exc_info and not record.exc_text:
+            record.exc_text = logging.Formatter().formatException(record.exc_info)
+        if record.exc_text:
+            record.exc_text = _redact(record.exc_text)
+        return True
+
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(message)s',
     handlers=[logging.StreamHandler(sys.stdout),
               logging.FileHandler(os.path.join(DATA_DIR, 'audit.log'))],
 )
+for _h in logging.getLogger().handlers:
+    _h.addFilter(_RedactFilter())
 
 PORT = int(os.environ.get("PORT", "8080"))
 
@@ -184,9 +212,15 @@ def _log_unhandled(e):
     from werkzeug.exceptions import HTTPException
     if isinstance(e, HTTPException):
         return e
+    # The media server says the item doesn't exist (deleted, or re-keyed by
+    # a re-match / upgrade) — that's a 404 for us too, not a server error.
+    resp = getattr(e, "response", None)
+    if isinstance(e, http_requests.HTTPError) and resp is not None and resp.status_code == 404:
+        print(f"[404] {request.method} {request.path}: not found on media server", file=sys.stderr, flush=True)
+        return jsonify({"error": "not found"}), 404
     import traceback
-    print(f"[500] {request.method} {request.path}: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
-    traceback.print_exc(file=sys.stderr)
+    print(_redact(f"[500] {request.method} {request.path}: {type(e).__name__}: {e}"), file=sys.stderr, flush=True)
+    print(_redact(traceback.format_exc()), file=sys.stderr, end="", flush=True)
     return jsonify({"error": "Internal server error"}), 500
 
 

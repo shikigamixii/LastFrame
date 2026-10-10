@@ -15,6 +15,7 @@ this module owns the write-once storage and the read/handle logic.
 """
 from datetime import datetime, timezone, timedelta
 
+import idutil
 from config_store import load_config, PROVIDER_PRIORITY
 from db import get_db
 from media_lookup import get_item_providers
@@ -69,6 +70,18 @@ def discover(cfg=None):
                     (ptype, pid, r["item_type"], r["library_id"], r["rating_key"],
                      r.get("title", ""), r.get("year"), first_seen))
                 inserted += cur.rowcount
+                if not cur.rowcount and ptype != "RatingKey":
+                    # Already tracked. A re-match or upgrade gives the title a
+                    # new item id on the server, so refresh the stored id and
+                    # library (first_seen and handled stay frozen). Only rows
+                    # owned by this provider, or legacy un-prefixed ones, are
+                    # touched, so a title on both servers doesn't flip-flop.
+                    db.execute(
+                        "UPDATE recently_added SET rating_key=?, library_id=? "
+                        "WHERE provider_type=? AND provider_id=? AND rating_key!=? "
+                        "AND (rating_key LIKE ? ESCAPE '\\' OR rating_key NOT LIKE '%\\_%' ESCAPE '\\')",
+                        (r["rating_key"], r["library_id"], ptype, pid, r["rating_key"],
+                         idutil.prefix(engine.KEY) + "\\_%"))
             db.commit()
         finally:
             db.close()

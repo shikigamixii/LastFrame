@@ -91,3 +91,52 @@ def test_mark_handled_by_provider_when_item_id_changed(monkeypatch):
     _reset_and_insert([{"ptype": "Tmdb", "pid": "9", "rk": "old-id", "first_seen": _iso(1)}])
     ra.mark_handled("brand-new-id")
     assert ra.get_recent({}, limit=100) == []
+
+
+# ── discover (refreshes a stale item id without touching first_seen) ─
+class _FakeEngine:
+    def __init__(self, key, rows):
+        self.KEY = key
+        self._rows = rows
+
+    def recently_added_scan(self, cfg):
+        return self._rows
+
+
+def _discover_with(monkeypatch, engines):
+    monkeypatch.setattr(ra._providers, "enabled_engines", lambda cfg=None: engines)
+    return ra.discover({})
+
+
+def _row(pid):
+    db = get_db()
+    r = db.execute("SELECT * FROM recently_added WHERE provider_type='Tmdb' AND provider_id=?", (pid,)).fetchone()
+    db.close()
+    return r
+
+
+def test_discover_refreshes_rekeyed_item(monkeypatch):
+    seen = _iso(5)
+    _reset_and_insert([{"ptype": "Tmdb", "pid": "7", "rk": "px_100", "first_seen": seen, "handled": 1}])
+    eng = _FakeEngine("plex", [{"providers": {"Tmdb": "7"}, "item_type": "movie",
+                                "library_id": "px_2", "rating_key": "px_200", "first_seen": _iso(0)}])
+    assert _discover_with(monkeypatch, [eng]) == 0
+    r = _row("7")
+    assert r["rating_key"] == "px_200" and r["library_id"] == "px_2"
+    assert r["first_seen"] == seen and r["handled"] == 1
+
+
+def test_discover_fixes_legacy_unprefixed_id(monkeypatch):
+    _reset_and_insert([{"ptype": "Tmdb", "pid": "8", "rk": "100", "first_seen": _iso(5)}])
+    eng = _FakeEngine("plex", [{"providers": {"Tmdb": "8"}, "item_type": "movie",
+                                "library_id": "px_1", "rating_key": "px_100"}])
+    _discover_with(monkeypatch, [eng])
+    assert _row("8")["rating_key"] == "px_100"
+
+
+def test_discover_does_not_steal_other_providers_row(monkeypatch):
+    _reset_and_insert([{"ptype": "Tmdb", "pid": "9", "rk": "px_100", "first_seen": _iso(5)}])
+    jf = _FakeEngine("jellyfin", [{"providers": {"Tmdb": "9"}, "item_type": "movie",
+                                   "library_id": "jf_abc", "rating_key": "jf_def"}])
+    _discover_with(monkeypatch, [jf])
+    assert _row("9")["rating_key"] == "px_100"
