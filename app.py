@@ -138,6 +138,9 @@ def _recently_added_sweep():
             added = recently_added.discover()
             if added:
                 app.logger.info(f"Recently-added sweep: recorded {added} new title(s)")
+            pruned = recently_added.prune_missing()
+            if pruned:
+                app.logger.info(f"Recently-added sweep: dropped {pruned} title(s) no longer on the server")
     except Exception as e:
         app.logger.warning(f"Recently-added sweep error: {e}")
     finally:
@@ -1062,6 +1065,15 @@ def api_auto_delete_diagnose(rating_key):
 
 
 # ── Routes: delete / image / misc ─────────────────────────────────────
+def _drop_from_recently_added(nsid):
+    """Take a just-deleted title off the Recently Added list. Best-effort:
+    the delete already succeeded, and the sweep's prune catches any miss."""
+    try:
+        recently_added.mark_handled(nsid, lookup_providers=False)
+    except Exception:
+        app.logger.warning(f"Could not clear {nsid} from Recently Added")
+
+
 @app.route("/api/delete/<item_id>", methods=["DELETE"])
 @limiter.limit("30 per minute")
 @login_required_api
@@ -1070,10 +1082,11 @@ def api_delete_item(item_id):
     try:
         engine.delete(raw)
         app.logger.info(f"Deleted item {item_id} from {request.remote_addr}")
-        return jsonify({"success": True})
     except Exception:
         app.logger.exception(f"Failed to delete item {item_id} from {request.remote_addr}")
         return jsonify({"success": False, "error": "Failed to delete item"}), 500
+    _drop_from_recently_added(item_id)
+    return jsonify({"success": True})
 
 
 @app.route("/api/delete-batch", methods=["DELETE"])
@@ -1090,6 +1103,7 @@ def api_delete_batch():
                 engine.delete(raw)
                 deleted.append(nsid)
                 app.logger.info(f"Deleted batch item {nsid} from {request.remote_addr}")
+                _drop_from_recently_added(nsid)
             except Exception:
                 app.logger.exception(f"Failed to delete batch item {nsid} from {request.remote_addr}")
                 failed.append({"id": nsid, "error": "Failed to delete item"})

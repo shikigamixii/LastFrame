@@ -140,3 +140,98 @@ def test_discover_does_not_steal_other_providers_row(monkeypatch):
                                    "library_id": "jf_abc", "rating_key": "jf_def"}])
     _discover_with(monkeypatch, [jf])
     assert _row("9")["rating_key"] == "px_100"
+
+
+# ── prune_missing (drops titles deleted from the server) ──────────────
+class _ExistsEngine:
+    def __init__(self, key, existing=None, fail=False):
+        self.KEY = key
+        self._existing = set(existing or [])
+        self._fail = fail
+
+    def existing_raw_ids(self, raws):
+        if self._fail:
+            raise RuntimeError("server unreachable")
+        return {r for r in raws if r in self._existing}
+
+
+def _handled(pid):
+    return _row(pid)["handled"]
+
+
+def test_prune_marks_missing_items_handled(monkeypatch):
+    _reset_and_insert([
+        {"ptype": "Tmdb", "pid": "1", "rk": "px_1", "first_seen": _iso(1)},
+        {"ptype": "Tmdb", "pid": "2", "rk": "px_2", "first_seen": _iso(1)},
+        {"ptype": "Tmdb", "pid": "3", "rk": "jf_aa", "first_seen": _iso(1)},
+    ])
+    engines = [_ExistsEngine("plex", existing={"1"}), _ExistsEngine("jellyfin", existing={"aa"})]
+    monkeypatch.setattr(ra._providers, "enabled_engines", lambda cfg=None: engines)
+    assert ra.prune_missing({}) == 1
+    assert (_handled("1"), _handled("2"), _handled("3")) == (0, 1, 0)
+
+
+def test_prune_skips_engine_when_check_fails(monkeypatch):
+    _reset_and_insert([{"ptype": "Tmdb", "pid": "1", "rk": "px_1", "first_seen": _iso(1)}])
+    monkeypatch.setattr(ra._providers, "enabled_engines",
+                        lambda cfg=None: [_ExistsEngine("plex", fail=True)])
+    assert ra.prune_missing({}) == 0
+    assert _handled("1") == 0
+
+
+def test_prune_ignores_disabled_provider_and_legacy_rows(monkeypatch):
+    _reset_and_insert([
+        {"ptype": "Tmdb", "pid": "1", "rk": "jf_aa", "first_seen": _iso(1)},
+        {"ptype": "Tmdb", "pid": "2", "rk": "12345", "first_seen": _iso(1)},
+    ])
+    monkeypatch.setattr(ra._providers, "enabled_engines",
+                        lambda cfg=None: [_ExistsEngine("plex", existing=set())])
+    assert ra.prune_missing({}) == 0
+    assert (_handled("1"), _handled("2")) == (0, 0)
+
+
+def test_mark_handled_without_provider_lookup(monkeypatch):
+    _reset_and_insert([{"ptype": "Tmdb", "pid": "1", "rk": "px_1", "first_seen": _iso(1)}])
+    def boom(_):
+        raise AssertionError("provider lookup should be skipped")
+    monkeypatch.setattr(ra, "get_item_providers", boom)
+    ra.mark_handled("px_1", lookup_providers=False)
+    assert _handled("1") == 1
+
+
+# ── engine existence checks (an outage must never read as "deleted") ──
+def _http_error(code):
+    import requests
+    r = requests.Response(); r.status_code = code
+    return requests.HTTPError(str(code), response=r)
+
+
+def test_plex_existing_raw_ids(monkeypatch):
+    import plex_engine as pe
+    monkeypatch.setattr(pe, "plex_get", lambda path, params=None: {"size": 1, "Metadata": [{"ratingKey": "5"}]})
+    assert pe.existing_raw_ids(["5", "6"]) == {"5"}
+
+    def all_gone(path, params=None):
+        raise _http_error(404)
+    monkeypatch.setattr(pe, "plex_get", all_gone)
+    assert pe.existing_raw_ids(["6"]) == set()
+
+    def outage(path, params=None):
+        raise _http_error(503)
+    monkeypatch.setattr(pe, "plex_get", outage)
+    import pytest
+    with pytest.raises(Exception):
+        pe.existing_raw_ids(["5"])
+    monkeypatch.setattr(pe, "plex_get", lambda path, params=None: {})
+    with pytest.raises(Exception):
+        pe.existing_raw_ids(["5"])
+
+
+def test_jellyfin_existing_raw_ids(monkeypatch):
+    import pytest
+    import jellyfin_engine as je
+    monkeypatch.setattr(je, "jellyfin_get", lambda path, params=None: {"Items": [{"Id": "aa"}]})
+    assert je.existing_raw_ids(["aa", "bb"]) == {"aa"}
+    monkeypatch.setattr(je, "jellyfin_get", lambda path, params=None: {})
+    with pytest.raises(Exception):
+        je.existing_raw_ids(["aa"])

@@ -15,6 +15,7 @@ from datetime import datetime, timezone, timedelta
 import idutil
 import media_lookup
 from flask import Response
+import requests as http_requests
 
 from config_store import load_config, PAGE_SIZE
 from db import get_db
@@ -1417,6 +1418,29 @@ def recently_added_scan(cfg):
                         "rating_key": _ns(rk), "title": i.get("title", ""),
                         "year": i.get("year"), "first_seen": first_seen})
     return out
+
+
+def existing_raw_ids(raws):
+    """Subset of raw rating keys that still exist on the server.
+
+    Raises when the answer is uncertain (network error, empty/odd response),
+    so callers never treat an outage as "everything was deleted".
+    """
+    raws = [str(r) for r in raws if r]
+    found = set()
+    for i in range(0, len(raws), 100):
+        chunk = raws[i:i + 100]
+        try:
+            mc = plex_get(f"/library/metadata/{','.join(chunk)}")
+        except http_requests.HTTPError as e:
+            # Plex answers 404 only when none of the requested keys exist.
+            if e.response is not None and e.response.status_code == 404:
+                continue
+            raise
+        if "size" not in mc:
+            raise ValueError("unexpected Plex metadata response")
+        found.update(str(it.get("ratingKey")) for it in (mc.get("Metadata") or []))
+    return found
 
 
 media_lookup.register(KEY, get_item_providers)

@@ -106,15 +106,18 @@ def get_recent(cfg=None, limit=100):
              "name": r["title"], "year": r["year"], "addedAt": r["first_seen"]} for r in rows]
 
 
-def mark_handled(item_id):
+def mark_handled(item_id, lookup_providers=True):
     """Flag this title's row(s) as triaged so it drops off the list. Matches by
     item id and by resolved provider ids (either may be how the row was keyed).
-    Called whenever an assignment is saved or cleared."""
+    Called whenever an assignment is saved or cleared, and after a delete
+    (with lookup_providers=False, since the item is already gone)."""
     now = datetime.now(timezone.utc).isoformat()
-    try:
-        providers = get_item_providers(item_id)
-    except Exception:
-        providers = {}
+    providers = {}
+    if lookup_providers:
+        try:
+            providers = get_item_providers(item_id)
+        except Exception:
+            providers = {}
     db = get_db()
     try:
         db.execute("UPDATE recently_added SET handled=1, handled_at=? WHERE rating_key=? AND handled=0",
@@ -126,3 +129,50 @@ def mark_handled(item_id):
         db.commit()
     finally:
         db.close()
+
+
+def prune_missing(cfg=None):
+    """Mark listed titles handled when their item no longer exists on the
+    server (deleted in LastFrame, by auto-delete, or outside the app).
+
+    Runs after discover(), so a title that was only re-keyed has already had
+    its id refreshed. An engine whose existence check fails is skipped — an
+    outage must never be read as "everything was deleted". Returns the count
+    of rows marked handled.
+    """
+    cfg = cfg if cfg is not None else load_config()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days(cfg))).isoformat()
+    db = get_db()
+    try:
+        rows = db.execute(
+            "SELECT DISTINCT rating_key FROM recently_added WHERE handled=0 AND first_seen >= ?",
+            (cutoff,)).fetchall()
+    finally:
+        db.close()
+    by_key = {}
+    for r in rows:
+        key, raw = idutil.split_id(r["rating_key"])
+        if key:
+            by_key.setdefault(key, []).append(raw)
+    missing = []
+    for engine in _providers.enabled_engines(cfg):
+        raws = by_key.get(engine.KEY)
+        if not raws:
+            continue
+        try:
+            existing = engine.existing_raw_ids(raws)
+        except Exception:
+            continue
+        missing.extend(idutil.make_id(engine.KEY, raw) for raw in raws if raw not in existing)
+    if not missing:
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    db = get_db()
+    try:
+        for nsid in missing:
+            db.execute("UPDATE recently_added SET handled=1, handled_at=? WHERE rating_key=? AND handled=0",
+                       (now, nsid))
+        db.commit()
+    finally:
+        db.close()
+    return len(missing)

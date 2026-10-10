@@ -1307,5 +1307,22 @@ def recently_added_scan(cfg):
     return out
 
 
+def existing_raw_ids(raws):
+    """Subset of raw item ids that still exist on the server.
+
+    Raises when the answer is uncertain (network error, empty/odd response),
+    so callers never treat an outage as "everything was deleted".
+    """
+    raws = [str(r) for r in raws if r]
+    found = set()
+    for i in range(0, len(raws), 100):
+        chunk = raws[i:i + 100]
+        data = jellyfin_get("/Items", {"Ids": ",".join(chunk), "Recursive": "true", "Limit": len(chunk)})
+        if not isinstance(data, dict) or "Items" not in data:
+            raise ValueError("unexpected Jellyfin items response")
+        found.update(str(it.get("Id")) for it in data["Items"])
+    return found
+
+
 # Register the item->providers resolver for the shared modules.
 media_lookup.register(KEY, get_item_providers)
