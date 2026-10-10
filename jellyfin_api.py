@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import requests as http_requests
 
 from config_store import load_config
+import idutil
 
 # Reuse one connection pool for all Jellyfin calls. The server can be remote
 # over TLS, so a fresh TCP+TLS handshake per request adds latency; a shared
@@ -66,7 +67,8 @@ def jellyfin_users():
     hidden = set(cfg.get("hidden_accounts", []))
     return [{"id": u["Id"], "name": u["Name"]}
             for u in jellyfin_get("/Users")
-            if u.get("Name") and u["Id"] not in hidden]
+            if u.get("Name") and u["Id"] not in hidden
+            and idutil.make_id("jellyfin", u["Id"]) not in hidden]
 
 def jellyfin_all_users():
     """All users regardless of hidden status."""

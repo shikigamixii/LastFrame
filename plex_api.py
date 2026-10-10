@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import requests as http_requests
 
 from config_store import load_config
+import idutil
 
 # Reuse one connection pool for all Plex/plex.tv calls. The PMS is often remote
 # (.plex.direct over TLS), so a fresh TCP+TLS handshake per request adds real
@@ -235,7 +236,8 @@ def plex_accounts():
             for a in mc.get("Account", [])
             if a.get("id", 0) != 0
             and (a.get("name") or a.get("title") or "").strip()
-            and str(a["id"]) not in hidden]
+            and str(a["id"]) not in hidden
+            and idutil.make_id("plex", str(a["id"])) not in hidden]
 
 def plex_all_accounts():
     """All non-system accounts regardless of name or hidden status"""
