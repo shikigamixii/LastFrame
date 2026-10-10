@@ -1,4 +1,4 @@
-# LastFrame (Jellyfin)
+# LastFrame (Jellyfin) PLEASE USE STABLE BRANCH THIS BRANCH IS NO LONGER BEING WORKED ON
 
 A self-hosted web dashboard for tracking and managing Jellyfin watch history across multiple users. Browse your libraries, see per-user watch progress, filter by genre or completion status, and automatically delete watched media after a configurable grace period.
 
