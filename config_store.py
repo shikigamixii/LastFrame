@@ -1,5 +1,5 @@
 """Config and admin record helpers — load/save JSON, admin credentials."""
-import os, json, copy, hmac, threading
+import os, sys, json, copy, hmac, threading
 import bcrypt
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,12 +28,56 @@ def _default_config():
 _cfg_lock = threading.Lock()
 _cfg_cache = {"mtime": None, "data": None}
 
+def check_data_dir(exit_code=1):
+    """Exit with a clear message if DATA_DIR or its files can't be read and
+    written by the user the app runs as (e.g. files left by an older
+    root-run container). Starting anyway could misread the config as a fresh
+    install and reopen first-time setup."""
+    problems = []
+    if not os.path.isdir(DATA_DIR):
+        problems.append(f"{DATA_DIR} does not exist or is not a folder")
+    elif not os.access(DATA_DIR, os.R_OK | os.W_OK | os.X_OK):
+        problems.append(f"{DATA_DIR} (the folder itself)")
+    else:
+        for name in ("config.json", "data.db", "data.db-wal", "data.db-shm", "audit.log"):
+            path = os.path.join(DATA_DIR, name)
+            if os.path.exists(path) and not os.access(path, os.R_OK | os.W_OK):
+                problems.append(path)
+    if not problems:
+        return
+    uid, gid = os.getuid(), os.getgid()
+    try:
+        st = os.stat(DATA_DIR)
+        owner = f"; the folder is owned by {st.st_uid}:{st.st_gid}"
+    except OSError:
+        owner = ""
+    sys.stderr.write(
+        "\nLastFrame cannot start: it can't read and write its data.\n"
+        + "".join(f"  - {p}\n" for p in problems)
+        + f"The app is running as user {uid}:{gid}{owner}.\n"
+        "Fix: give the data folder to that user on the host, e.g.\n"
+        f"  sudo chown -R {uid}:{gid} <your data folder>\n"
+        "or set PUID/PGID in .env to the folder's owner (see README).\n\n")
+    sys.stderr.flush()
+    raise SystemExit(exit_code)
+
+
+class ConfigUnreadableError(RuntimeError):
+    """config.json exists but can't be read or parsed."""
+
+
 def load_config():
+    # Only a config file that genuinely doesn't exist means "fresh install".
+    # One that exists but can't be read (wrong owner/permissions) or parsed
+    # must fail loudly: falling back to defaults would look like "no admin"
+    # and reopen the unauthenticated first-time setup to anyone.
     with _cfg_lock:
         try:
-            mtime = os.path.getmtime(CONFIG_PATH)
-        except OSError:
+            mtime = os.stat(CONFIG_PATH).st_mtime
+        except FileNotFoundError:
             mtime = None
+        except OSError as e:
+            raise ConfigUnreadableError(f"Cannot access {CONFIG_PATH}: {e}") from e
         if mtime != _cfg_cache["mtime"] or _cfg_cache["data"] is None:
             if mtime is None:
                 _cfg_cache["data"] = _default_config()
@@ -41,8 +85,8 @@ def load_config():
                 try:
                     with open(CONFIG_PATH) as f:
                         _cfg_cache["data"] = json.load(f)
-                except (OSError, ValueError):
-                    _cfg_cache["data"] = _default_config()
+                except (OSError, ValueError) as e:
+                    raise ConfigUnreadableError(f"Cannot read {CONFIG_PATH}: {e}") from e
             _cfg_cache["mtime"] = mtime
         return copy.deepcopy(_cfg_cache["data"])
 

@@ -17,6 +17,7 @@ from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect, CSRFError
 
 from config_store import (
+    check_data_dir,
     DATA_DIR, CONFIG_PATH, PAGE_SIZE,
     load_config, save_config, get_admin, verify_admin, update_admin_credentials,
 )
@@ -128,6 +129,12 @@ class _RedactFilter(logging.Filter):
             record.exc_text = _redact(record.exc_text)
         return True
 
+
+# Refuse to start if the data folder isn't usable by the user we run as.
+# gunicorn.conf.py runs the same check in the master process first; this one
+# covers `python app.py` and exits with gunicorn's "worker failed to boot"
+# code so gunicorn shuts down instead of respawning workers forever.
+check_data_dir(exit_code=3)
 
 logging.basicConfig(
     level=logging.INFO,

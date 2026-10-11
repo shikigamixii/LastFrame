@@ -109,6 +109,28 @@ folder. The default is a Synology path:
 If you're not on a Synology NAS, change the left-hand side to a folder that
 exists on your machine (for example `./data:/data`). Keep `:/data` unchanged.
 
+LastFrame runs as an unprivileged user (not root), so that user must own the
+data folder. By default it runs as `1000:1000`. Either give the folder to
+that user:
+
+```bash
+sudo chown -R 1000:1000 /volume1/docker/lastframe/data
+```
+
+or tell LastFrame to run as the folder's current owner by adding its user and
+group IDs to `.env` (find them with `ls -ln` on the folder's parent):
+
+```bash
+echo "PUID=1026" >> .env   # example: a Synology DSM user
+echo "PGID=100" >> .env    # example: Synology's "users" group
+```
+
+> **Upgrading from a version that ran as root:** files created by the old
+> container are owned by root, so the new one can't read them. Run the
+> `chown` above once (or set `PUID`/`PGID`), then restart. If the folder
+> isn't usable, LastFrame stops with a message naming the user it runs as
+> and the exact command to fix it — it never starts with missing settings.
+
 #### 4. Start it
 
 ```bash

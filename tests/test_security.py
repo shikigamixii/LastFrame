@@ -196,3 +196,59 @@ def test_login_and_logout_keep_csrf_token_working(tmp_path, monkeypatch):
     assert c.post("/api/auth/logout", headers=h).status_code == 200
     assert c.post("/api/auth/login", json={"username": "owner", "password": "ownerpass1"}, headers=h).status_code == 200
     config_store._cfg_cache.update(mtime=None, data=None)
+
+
+# ── M4: an unusable data folder must fail closed, never reopen setup ──
+def test_missing_config_means_fresh_install(tmp_path, monkeypatch):
+    monkeypatch.setattr(config_store, "CONFIG_PATH", str(tmp_path / "config.json"))
+    config_store._cfg_cache.update(mtime=None, data=None)
+    assert config_store.load_config()["show_all_libraries"] is True
+    config_store._cfg_cache.update(mtime=None, data=None)
+
+
+def test_corrupt_config_raises(tmp_path, monkeypatch):
+    path = tmp_path / "config.json"
+    path.write_text("{not json")
+    monkeypatch.setattr(config_store, "CONFIG_PATH", str(path))
+    config_store._cfg_cache.update(mtime=None, data=None)
+    with pytest.raises(config_store.ConfigUnreadableError):
+        config_store.load_config()
+    config_store._cfg_cache.update(mtime=None, data=None)
+
+
+def test_unreadable_config_raises_and_setup_stays_closed(client, monkeypatch):
+    A, c = client
+    c.post("/api/setup", json=SETUP_BODY)
+    real_stat = os.stat
+
+    def denied(path, *a, **kw):
+        if str(path) == config_store.CONFIG_PATH:
+            raise PermissionError(13, "Permission denied")
+        return real_stat(path, *a, **kw)
+    monkeypatch.setattr(config_store.os, "stat", denied)
+    config_store._cfg_cache.update(mtime=None, data=None)
+    with pytest.raises(config_store.ConfigUnreadableError):
+        config_store.load_config()
+    attacker = A.app.test_client()
+    r = attacker.post("/api/setup", json={**SETUP_BODY, "username": "attacker",
+                                          "password": "attackpass1", "confirm_password": "attackpass1"})
+    assert r.status_code == 500                      # fails closed, no takeover
+    monkeypatch.setattr(config_store.os, "stat", real_stat)
+    config_store._cfg_cache.update(mtime=None, data=None)
+    assert config_store.get_admin()["username"] == "owner"
+
+
+def test_startup_check_exits_on_unwritable_data(client, monkeypatch, capsys):
+    A, c = client
+    # data.db always exists (created at import); pretend it isn't writable.
+    assert os.path.exists(os.path.join(config_store.DATA_DIR, "data.db"))
+    monkeypatch.setattr(config_store.os, "access", lambda p, mode: not str(p).endswith("data.db"))
+    with pytest.raises(SystemExit) as e:
+        config_store.check_data_dir()
+    assert e.value.code == 1
+    err = capsys.readouterr().err
+    assert "cannot start" in err and "chown" in err
+
+
+def test_startup_check_passes_when_usable(client):
+    config_store.check_data_dir()
