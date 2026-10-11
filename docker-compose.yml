@@ -23,5 +23,8 @@ services:
       - JELLYFIN_WEBHOOK_SECRET=${JELLYFIN_WEBHOOK_SECRET:-}
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
       - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-}
+      # Number of reverse proxies in front of LastFrame (0 = none). Must be
+      # right for login rate limiting and HTTPS detection; see README.
+      - TRUSTED_PROXY_HOPS=${TRUSTED_PROXY_HOPS:-0}
       - DATA_DIR=/data
     restart: unless-stopped

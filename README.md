@@ -248,13 +248,14 @@ Settings.
 ## Optional environment variables
 
 With Docker, only variables listed under `environment:` in
-`docker-compose.yml` reach the container. `SESSION_COOKIE_SECURE` is already
-listed (set it in `.env`); add the others there yourself if you need them.
+`docker-compose.yml` reach the container. `SESSION_COOKIE_SECURE` and
+`TRUSTED_PROXY_HOPS` are already listed (set them in `.env`); add the others
+there yourself if you need them.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `SESSION_COOKIE_SECURE` | off | Set to `1` when LastFrame is served over HTTPS |
-| `TRUSTED_PROXY_HOPS` | `0` | Number of reverse proxies in front of LastFrame; set to `1` behind a single proxy so client IPs and HTTPS are detected correctly |
+| `TRUSTED_PROXY_HOPS` | `0` | Number of reverse proxies in front of LastFrame; set to `1` behind a single proxy so client IPs and HTTPS are detected correctly. Getting it wrong weakens the login rate limit — LastFrame logs a warning if it looks misconfigured |
 | `PLEX_HISTORY_POLL_INTERVAL` | `300` | Seconds between Plex play-history polls (for users that don't send webhooks) |
 | `RECENTLY_ADDED_SWEEP_INTERVAL` | `1800` | Seconds between Recently Added scans |
 

@@ -252,3 +252,55 @@ def test_startup_check_exits_on_unwritable_data(client, monkeypatch, capsys):
 
 def test_startup_check_passes_when_usable(client):
     config_store.check_data_dir()
+
+
+# ── L1: new admin passwords need at least 8 characters ────────────────
+def test_credential_change_requires_8_char_password(client):
+    A, c = client
+    c.post("/api/setup", json=SETUP_BODY)
+    body = {"current_username": "owner", "current_password": "ownerpass1",
+            "new_username": "owner", "new_password": "short", "confirm_password": "short"}
+    r = c.post("/api/admin/change-credentials", json=body)
+    assert r.status_code == 400 and "8 characters" in r.get_json()["error"]
+    assert config_store.verify_admin("owner", "ownerpass1")
+
+
+# ── L2: the debug sweep can't be triggered by a plain GET/link ────────
+def test_debug_managed_sweep_is_post_only(client):
+    A, c = client
+    c.post("/api/setup", json=SETUP_BODY)
+    assert c.get("/api/admin/debug-managed-sweep").status_code == 405
+
+
+# ── L3: security headers ──────────────────────────────────────────────
+def test_csp_on_every_response(client):
+    A, c = client
+    for path in ("/setup", "/api/auth/status"):
+        csp = c.get(path).headers.get("Content-Security-Policy", "")
+        assert "default-src 'self'" in csp and "frame-ancestors 'none'" in csp
+        assert "object-src 'none'" in csp and "connect-src 'self'" in csp
+
+
+def test_hsts_only_over_https(client):
+    A, c = client
+    assert "Strict-Transport-Security" not in c.get("/api/auth/status").headers
+    r = c.get("/api/auth/status", base_url="https://localhost")
+    assert r.headers.get("Strict-Transport-Security") == "max-age=31536000"
+
+
+# ── L4: warn once about proxy misconfiguration ────────────────────────
+def test_proxy_misconfig_warnings(client, monkeypatch, caplog):
+    A, c = client
+    monkeypatch.setattr(A, "_proxy_warned", set())
+    monkeypatch.setattr(A, "_proxy_hops", 0)
+    with caplog.at_level("WARNING"):
+        c.get("/api/auth/status", headers={"X-Forwarded-For": "203.0.113.5"})
+        c.get("/api/auth/status", headers={"X-Forwarded-For": "203.0.113.6"})
+    assert sum("TRUSTED_PROXY_HOPS is 0" in r.getMessage() for r in caplog.records) == 1
+
+    caplog.clear()
+    monkeypatch.setattr(A, "_proxy_hops", 1)
+    with caplog.at_level("WARNING"):
+        c.get("/api/auth/status")
+        c.get("/api/auth/status")
+    assert sum("without X-Forwarded-For" in r.getMessage() for r in caplog.records) == 1

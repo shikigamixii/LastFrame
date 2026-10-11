@@ -80,12 +80,47 @@ def _csrf_error(e):
     return jsonify({"error": "CSRF token missing or invalid", "csrf_failed": True}), 400
 
 
+# Everything the pages use is served by this app, so the policy only allows
+# 'self'. 'unsafe-inline' is still needed for scripts and styles because the
+# frontend uses inline onclick handlers and style attributes throughout.
+_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; "
+        "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+
+
 @app.after_request
 def _security_headers(resp):
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
+    resp.headers.setdefault("Content-Security-Policy", _CSP)
+    # Only over HTTPS (browsers ignore it on plain HTTP anyway). Behind a
+    # reverse proxy this needs TRUSTED_PROXY_HOPS so HTTPS is detected. No
+    # includeSubDomains: other services on sibling subdomains are unaffected.
+    if request.is_secure:
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
     return resp
+
+
+# ── Proxy configuration sanity check (rate limiting relies on client IPs) ──
+_proxy_warned = set()
+
+
+@app.before_request
+def _warn_proxy_misconfig():
+    forwarded = request.headers.get("X-Forwarded-For")
+    if _proxy_hops == 0 and forwarded and "no_hops" not in _proxy_warned:
+        _proxy_warned.add("no_hops")
+        app.logger.warning(
+            "Requests arrive through a reverse proxy (X-Forwarded-For is set) but TRUSTED_PROXY_HOPS "
+            "is 0, so every visitor looks like the proxy's IP and shares one login rate limit. "
+            "Set TRUSTED_PROXY_HOPS=1 (one proxy) in .env.")
+    elif _proxy_hops > 0 and not forwarded and "no_proxy" not in _proxy_warned:
+        _proxy_warned.add("no_proxy")
+        app.logger.warning(
+            f"TRUSTED_PROXY_HOPS is {_proxy_hops} but a request arrived without X-Forwarded-For. "
+            "If LastFrame isn't behind a reverse proxy, set TRUSTED_PROXY_HOPS=0: otherwise a "
+            "client can fake its IP and get around the login rate limit.")
 
 
 limiter = Limiter(get_remote_address, app=app,
@@ -550,6 +585,8 @@ def api_change_credentials():
         return jsonify({"success": False, "error": "Username must be 50 characters or fewer"}), 400
     if not _USERNAME_RE.match(new_username):
         return jsonify({"success": False, "error": "Username may only contain letters, numbers, and _ - . @"}), 400
+    if len(new_password) < 8:
+        return jsonify({"success": False, "error": "Password must be at least 8 characters"}), 400
     if new_password != confirm_password:
         return jsonify({"success": False, "error": "New passwords do not match"}), 400
     success, msg = update_admin_credentials(current_username, current_password, new_username, new_password)
@@ -1263,7 +1300,7 @@ def api_debug_history():
     return jsonify(_redact_obj(body)), status
 
 
-@app.route("/api/admin/debug-managed-sweep", methods=["GET", "POST"])
+@app.route("/api/admin/debug-managed-sweep", methods=["POST"])
 @login_required_api
 def api_debug_managed_sweep():
     plex = providers.get_engine("plex")
