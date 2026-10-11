@@ -107,6 +107,31 @@ def libraries(cfg=None):
     return out
 
 
+# Library types the app can't monitor, shown greyed out in Settings so users
+# know why a library is missing. Virtual folders (collections, playlists,
+# live TV) aren't media libraries and are left out entirely.
+_UNSUPPORTED_LABELS = {"music": "Music", "books": "Books", "photos": "Photos",
+                       "homevideos": "Home Videos", "musicvideos": "Music Videos"}
+_VIRTUAL_TYPES = {"boxsets", "playlists", "livetv"}
+
+
+def unsupported_libraries():
+    out = []
+    for s in jellyfin_libraries():
+        ctype = (s.get("CollectionType") or "").lower()
+        if ctype in ("tvshows", "movies") or ctype in _VIRTUAL_TYPES:
+            continue
+        if ctype in ("", "mixed"):
+            reason = ("Mixed content isn't supported. Set the library's content type "
+                      "to Movies or Shows in Jellyfin.")
+            label = "Mixed"
+        else:
+            label = _UNSUPPORTED_LABELS.get(ctype, ctype.title())
+            reason = f"{label} libraries aren't supported. Only Movies and Shows libraries can be monitored."
+        out.append({"name": s.get("Name", ""), "type": label, "reason": reason, "provider": LABEL})
+    return out
+
+
 def titles_by_ids(kind, raw_ids):
     items = []
     for rid in raw_ids:

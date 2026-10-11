@@ -78,3 +78,29 @@ def test_enabled_engines_filters_on_flag_and_config(monkeypatch):
     cfg = {"plex_enabled": True, "jellyfin_enabled": True}
     keys = [e.KEY for e in providers.enabled_engines(cfg)]
     assert keys == ["plex"]  # jellyfin flag on but not configured
+
+
+# ── Jellyfin unsupported libraries (shown greyed out in Settings) ─────
+_JF_FOLDERS = [
+    {"Id": "a", "Name": "Films", "CollectionType": "movies"},
+    {"Id": "b", "Name": "Series", "CollectionType": "tvshows"},
+    {"Id": "c", "Name": "Everything", "CollectionType": "mixed"},
+    {"Id": "d", "Name": "Untyped"},
+    {"Id": "e", "Name": "Songs", "CollectionType": "music"},
+    {"Id": "f", "Name": "Collections", "CollectionType": "boxsets"},
+    {"Id": "g", "Name": "Lists", "CollectionType": "playlists"},
+]
+
+
+def test_jellyfin_unsupported_libraries(monkeypatch):
+    monkeypatch.setattr(jellyfin_engine, "jellyfin_libraries", lambda: _JF_FOLDERS)
+    out = jellyfin_engine.unsupported_libraries()
+    assert [(u["name"], u["type"]) for u in out] == [
+        ("Everything", "Mixed"), ("Untyped", "Mixed"), ("Songs", "Music")]
+    assert "Movies or Shows" in out[0]["reason"]
+
+
+def test_jellyfin_supported_list_unchanged(monkeypatch):
+    monkeypatch.setattr(jellyfin_engine, "jellyfin_libraries", lambda: _JF_FOLDERS)
+    libs = jellyfin_engine.libraries({"show_all_libraries": True})
+    assert [l["name"] for l in libs] == ["Films", "Series"]

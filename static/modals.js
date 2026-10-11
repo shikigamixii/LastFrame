@@ -58,7 +58,7 @@ async function confirmBulkAssign(){
 // Settings
 async function openSettings(){
   $("#settingsModal").classList.add("active");
-  const[libs,cfg,wh,allAccs,provs]=await Promise.all([api("/api/libraries"),api("/api/config"),api("/api/webhook-events/status"),api("/api/accounts"),api("/api/providers")]);
+  const[libs,cfg,wh,allAccs,provs,unsupLibs]=await Promise.all([api("/api/libraries"),api("/api/config"),api("/api/webhook-events/status"),api("/api/accounts"),api("/api/providers"),api("/api/libraries/unsupported").catch(()=>[])]);
   S.config=cfg;
   // Providers section — enable/disable each media server independently.
   let h='<h3>Media Servers</h3>';
@@ -88,6 +88,9 @@ async function openSettings(){
   h+='<div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1rem"></div>';
   h+='<h3>Select Libraries to Monitor</h3>';
   for(const l of libs){const on=cfg.show_all_libraries||(cfg.monitored_libraries||[]).includes(l.id);h+='<div class="lib-toggle"><div><div class="lib-toggle-name">'+esc(l.name)+'</div><div class="lib-toggle-type">'+(l.type==="tvshows"?"TV Shows":"Movies")+'</div></div><div class="toggle-switch '+(on?"on":"")+'" data-lib-id="'+l.id+'" onclick="this.classList.toggle(\'on\')"></div></div>';}
+  // Libraries skipped because of their type: shown greyed out with the reason
+  // and no toggle, so saveSettings (which counts .toggle-switch) ignores them.
+  for(const u of (unsupLibs||[])){h+='<div class="lib-toggle lib-unsupported" title="'+escAttr(u.reason)+'"><div><div class="lib-toggle-name">'+esc(u.name)+'</div><div class="lib-toggle-type">'+esc(u.type)+' · not supported</div><div class="lib-unsupported-reason">'+esc(u.reason)+'</div></div></div>';}
   // Users section
   h+='<div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1rem"><h3 style="margin-bottom:0.5rem">Manage Users</h3>';
   h+='<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.6rem">Hidden users are excluded from all watch tracking and assignments.</div>';

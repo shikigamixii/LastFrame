@@ -702,6 +702,24 @@ def api_libraries():
     return jsonify(out)
 
 
+@app.route("/api/libraries/unsupported")
+@login_required_api
+def api_libraries_unsupported():
+    """Libraries skipped because of their type, so Settings can explain why
+    they're missing. Engines without unsupported_libraries() contribute none."""
+    cfg = load_config()
+    out = []
+    for e in providers.enabled_engines(cfg):
+        fn = getattr(e, "unsupported_libraries", None)
+        if fn is None:
+            continue
+        try:
+            out.extend(fn())
+        except Exception:
+            app.logger.warning(f"unsupported_libraries() failed for {e.KEY}")
+    return jsonify(out)
+
+
 def _list_titles(kind):
     pid = request.args.get("parentId", "")
     search = request.args.get("search", "")
