@@ -304,3 +304,48 @@ def test_proxy_misconfig_warnings(client, monkeypatch, caplog):
         c.get("/api/auth/status")
         c.get("/api/auth/status")
     assert sum("without X-Forwarded-For" in r.getMessage() for r in caplog.records) == 1
+
+
+# ── L5: a non-ASCII webhook secret is rejected cleanly, not a 500 ─────
+def test_webhook_non_ascii_secret_rejected(client, monkeypatch):
+    A, c = client
+    monkeypatch.setenv("JELLYFIN_WEBHOOK_SECRET", "S" * 20)
+    assert c.post("/api/webhook/jellyfin?secret=%C3%A9t%C3%A9", json={}).status_code == 401
+    assert c.post("/api/webhook/jellyfin", json={}, headers={"X-Webhook-Secret": "wrong"}).status_code == 401
+
+
+# ── L6: setup status never reveals server URLs ────────────────────────
+def test_setup_status_hides_env_urls(client, monkeypatch):
+    A, c = client
+    monkeypatch.setenv("PLEX_URL", "https://secret-host.plex.direct:32400")
+    monkeypatch.setenv("JELLYFIN_URL", "https://jf.secret-host.example")
+    r = c.get("/api/auth/status")
+    body = r.get_data(as_text=True)
+    assert "secret-host" not in body
+    d = r.get_json()
+    assert d["needs_setup"] is True and d["plex_url_set"] is True and d["jellyfin_url_set"] is True
+
+
+# ── L7: data files are owner-only ─────────────────────────────────────
+def test_data_files_restricted(tmp_path, monkeypatch):
+    monkeypatch.setattr(config_store, "DATA_DIR", str(tmp_path))
+    loose = tmp_path / "audit.log"
+    loose.write_text("x")
+    os.chmod(loose, 0o644)
+    old_umask = os.umask(0o022)
+    try:
+        config_store.restrict_data_files()
+        assert oct(os.stat(loose).st_mode & 0o777) == "0o600"
+        new = tmp_path / "data.db"
+        new.write_text("y")
+        assert oct(os.stat(new).st_mode & 0o777) == "0o600"
+    finally:
+        os.umask(old_umask)
+
+
+# ── L8: the start.sh secret key never goes into the Docker image ──────
+def test_dockerignore_excludes_secrets():
+    path = os.path.join(os.path.dirname(__file__), "..", ".dockerignore")
+    entries = {line.strip() for line in open(path) if line.strip() and not line.startswith("#")}
+    for name in (".env", "config.json", "data.db", "audit.log", ".flask_secret_key"):
+        assert name in entries

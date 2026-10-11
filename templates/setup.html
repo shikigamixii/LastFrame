@@ -58,18 +58,23 @@ body{display:flex;align-items:center;justify-content:center;min-height:100vh;bac
     const inp=(id,ph,val,type='text')=>`<input type="${type}" id="${id}" placeholder="${ph}" value="${esc(val)}" style="margin-bottom:0.75rem">`;
     const ok='<div style="font-size:0.8rem;color:var(--green,#4ade80);margin-bottom:0.75rem">&#x2713; configured via environment variable</div>';
 
+    // The server only says whether a URL is set via the environment, not the
+    // URL itself; an environment value always wins, so the box can stay empty.
+    const envUrl='Set by environment variable';
     const px=document.getElementById('setupPlexFields');
+    const pxUrl=inp('setupPlexUrl',d.plex_url_set?envUrl:'Plex Server URL (e.g. https://xxx.plex.direct:32400)','');
     if(d.plex_token_set){
-      px.innerHTML=ok+inp('setupPlexUrl','Plex URL (optional override)',d.plex_url_from_env);
+      px.innerHTML=ok+pxUrl;
     }else{
-      px.innerHTML=inp('setupPlexUrl','Plex Server URL (e.g. https://xxx.plex.direct:32400)',d.plex_url_from_env)+inp('setupPlexToken','Plex Token','','password');
+      px.innerHTML=pxUrl+inp('setupPlexToken','Plex Token','','password');
     }
 
     const jf=document.getElementById('setupJellyfinFields');
+    const jfUrl=inp('setupJellyfinUrl',d.jellyfin_url_set?envUrl:'Jellyfin Server URL (e.g. https://jellyfin.example.com)','');
     if(d.jellyfin_api_key_set){
-      jf.innerHTML=ok+inp('setupJellyfinUrl','Jellyfin URL (optional override)',d.jellyfin_url_from_env);
+      jf.innerHTML=ok+jfUrl;
     }else{
-      jf.innerHTML=inp('setupJellyfinUrl','Jellyfin Server URL (e.g. http://127.0.0.1:8096)',d.jellyfin_url_from_env)+inp('setupJellyfinApiKey','API Key','','password');
+      jf.innerHTML=jfUrl+inp('setupJellyfinApiKey','API Key','','password');
     }
 
     if(d.webhook_secret_set){

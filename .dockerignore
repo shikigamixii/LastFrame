@@ -12,3 +12,4 @@ config.json
 data.db
 audit.log
 *.md
+.flask_secret_key

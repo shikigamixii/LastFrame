@@ -17,7 +17,7 @@ from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect, CSRFError
 
 from config_store import (
-    check_data_dir,
+    check_data_dir, restrict_data_files,
     DATA_DIR, CONFIG_PATH, PAGE_SIZE,
     load_config, save_config, get_admin, verify_admin, update_admin_credentials,
 )
@@ -170,6 +170,7 @@ class _RedactFilter(logging.Filter):
 # covers `python app.py` and exits with gunicorn's "worker failed to boot"
 # code so gunicorn shuts down instead of respawning workers forever.
 check_data_dir(exit_code=3)
+restrict_data_files()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -477,9 +478,11 @@ def auth_status():
     resp = {"logged_in": logged_in, "username": session.get("username") if logged_in else None,
             "needs_setup": is_setup_needed()}
     if resp["needs_setup"]:
-        resp["plex_url_from_env"] = os.environ.get("PLEX_URL", "")
+        # Unauthenticated: say whether a value comes from the environment,
+        # never what it is (server URLs reveal where the media servers live).
+        resp["plex_url_set"] = bool(os.environ.get("PLEX_URL"))
         resp["plex_token_set"] = bool(os.environ.get("PLEX_TOKEN"))
-        resp["jellyfin_url_from_env"] = os.environ.get("JELLYFIN_URL", "")
+        resp["jellyfin_url_set"] = bool(os.environ.get("JELLYFIN_URL"))
         resp["jellyfin_api_key_set"] = bool(os.environ.get("JELLYFIN_API_KEY"))
         resp["webhook_secret_set"] = bool(os.environ.get("PLEX_WEBHOOK_SECRET") or os.environ.get("JELLYFIN_WEBHOOK_SECRET"))
     return jsonify(resp)
@@ -677,7 +680,8 @@ def _handle_webhook(engine):
     if not secret:
         return jsonify({"error": "Webhook not configured"}), 503
     incoming = request.headers.get("X-Webhook-Secret") or request.args.get("secret", "")
-    if not hmac.compare_digest(incoming, secret):
+    # Compare as bytes: compare_digest raises on non-ASCII str input.
+    if not hmac.compare_digest(incoming.encode("utf-8"), secret.encode("utf-8")):
         return jsonify({"error": "Unauthorized"}), 401
     body, status = engine.store_webhook(request, load_config())
     return jsonify(body), status

@@ -62,6 +62,20 @@ def check_data_dir(exit_code=1):
     raise SystemExit(exit_code)
 
 
+def restrict_data_files():
+    """New files (audit.log, data.db and its -wal/-shm, config.json) are
+    created owner-only, and existing ones are tightened to 0600. They hold
+    tokens, password hashes, watch history and IP addresses."""
+    os.umask(0o077)
+    for name in ("config.json", "data.db", "data.db-wal", "data.db-shm", "audit.log"):
+        path = os.path.join(DATA_DIR, name)
+        try:
+            if os.stat(path).st_uid == os.getuid():
+                os.chmod(path, 0o600)
+        except OSError:
+            pass
+
+
 class ConfigUnreadableError(RuntimeError):
     """config.json exists but can't be read or parsed."""
 
