@@ -106,6 +106,18 @@ def _redact(text):
     return text
 
 
+def _redact_obj(obj):
+    """_redact applied to every string in a JSON-able structure. Used on API
+    responses that can carry raw error text from media-server calls."""
+    if isinstance(obj, str):
+        return _redact(obj)
+    if isinstance(obj, dict):
+        return {k: _redact_obj(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_redact_obj(v) for v in obj]
+    return obj
+
+
 class _RedactFilter(logging.Filter):
     def filter(self, record):
         record.msg = _redact(record.getMessage())
@@ -955,7 +967,7 @@ def api_backfill_history():
             per[e.KEY] = r
         except Exception as ex:
             per[e.KEY] = {"ok": False, "error": str(ex)}
-    return jsonify({"ok": True, "imported": imported, "total_history": total, "providers": per})
+    return jsonify(_redact_obj({"ok": True, "imported": imported, "total_history": total, "providers": per}))
 
 
 # ── Routes: accounts ──────────────────────────────────────────────────
@@ -1149,7 +1161,7 @@ def api_auto_delete_sweep():
 @login_required_api
 def api_auto_delete_diagnose(rating_key):
     engine, raw = _resolve(rating_key)
-    return jsonify(engine.diagnose(raw, load_config()))
+    return jsonify(_redact_obj(engine.diagnose(raw, load_config())))
 
 
 # ── Routes: delete / image / misc ─────────────────────────────────────
@@ -1241,7 +1253,7 @@ def api_debug_history():
     key = (request.args.get("key") or "").strip()
     title_q = (request.args.get("title") or "").strip().lower()
     body, status = plex.debug_history(key, title_q)
-    return jsonify(body), status
+    return jsonify(_redact_obj(body)), status
 
 
 @app.route("/api/admin/debug-managed-sweep", methods=["GET", "POST"])
@@ -1250,7 +1262,7 @@ def api_debug_managed_sweep():
     plex = providers.get_engine("plex")
     if not plex or not plex.is_enabled():
         return jsonify({"ok": False, "error": "Plex is not enabled"}), 400
-    return jsonify(plex.run_managed_sweep())
+    return jsonify(_redact_obj(plex.run_managed_sweep()))
 
 
 if __name__ == "__main__":

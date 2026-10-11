@@ -54,12 +54,20 @@ def get_plex_token():
 def get_webhook_secret():
     return os.environ.get("PLEX_WEBHOOK_SECRET") or load_config().get("webhook_secret", "")
 
+def _pms_headers(token, base=PLEX_HEADERS):
+    """Headers for a request to the Plex server. The token goes in the
+    X-Plex-Token header, never the URL: URLs end up in error messages, proxy
+    logs and server access logs, headers don't."""
+    h = dict(base)
+    if token:
+        h["X-Plex-Token"] = token
+    return h
+
 def plex_get(path, params=None):
-    p = {"X-Plex-Token": get_plex_token()}
-    if params: p.update(params)
+    p = dict(params) if params else {}
     t0 = time.monotonic()
     try:
-        r = _session.get(f"{get_plex_url()}{path}", headers=PLEX_HEADERS, params=p, timeout=(5, 20))
+        r = _session.get(f"{get_plex_url()}{path}", headers=_pms_headers(get_plex_token()), params=p, timeout=(5, 20))
         r.raise_for_status()
         # Remote .plex.direct hosts occasionally return HTTP 200 with an empty body
         # after a stall; treat that as "no data" rather than crashing on r.json().
@@ -81,9 +89,8 @@ def plex_get_with_token(path, token, params=None):
     which Plex only returns when queried with that specific user's token.
     No request hook — these calls aren't tied to a Flask request.
     """
-    p = {"X-Plex-Token": token}
-    if params: p.update(params)
-    r = _session.get(f"{get_plex_url()}{path}", headers=PLEX_HEADERS, params=p, timeout=(5, 20))
+    p = dict(params) if params else {}
+    r = _session.get(f"{get_plex_url()}{path}", headers=_pms_headers(token), params=p, timeout=(5, 20))
     r.raise_for_status()
     if not r.content:
         return {}
@@ -207,8 +214,7 @@ def plex_refresh_access_tokens():
     try:
         r = _session.post(
             f"{url}/myplex/refreshAccessTokens",
-            headers=PLEX_HEADERS,
-            params={"X-Plex-Token": token},
+            headers=_pms_headers(token),
             timeout=15,
         )
         return r.status_code
@@ -216,15 +222,14 @@ def plex_refresh_access_tokens():
         return None
 
 def plex_delete(path):
-    r = _session.delete(f"{get_plex_url()}{path}", headers=PLEX_HEADERS,
-                              params={"X-Plex-Token": get_plex_token()}, timeout=30)
+    r = _session.delete(f"{get_plex_url()}{path}", headers=_pms_headers(get_plex_token()), timeout=30)
     r.raise_for_status()
     return r
 
 def plex_get_raw(path, params=None):
-    p = {"X-Plex-Token": get_plex_token()}
-    if params: p.update(params)
-    r = _session.get(f"{get_plex_url()}{path}", params=p, timeout=15, stream=True)
+    p = dict(params) if params else {}
+    r = _session.get(f"{get_plex_url()}{path}", headers=_pms_headers(get_plex_token(), base={}),
+                     params=p, timeout=15, stream=True)
     r.raise_for_status()
     return r
 
