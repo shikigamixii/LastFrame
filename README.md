@@ -61,7 +61,7 @@ Only **Movies** and **TV Shows** libraries can be monitored.
 #### 1. Clone the repository
 
 ```bash
-git clone -b develop https://github.com/shikigamixii/LastFrame.git ~/lastframe
+git clone -b stable https://github.com/shikigamixii/LastFrame.git ~/lastframe
 cd ~/lastframe
 ```
 
