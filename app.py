@@ -330,12 +330,15 @@ _USERNAME_RE = re.compile(r'^[a-zA-Z0-9_\-\.@]+$')
 
 
 def is_setup_needed():
+    """First-time setup is only open while no admin account exists.
+
+    Once an admin exists, setup stays closed for good — even if every media
+    server's credentials later go missing — because /api/setup is
+    unauthenticated and would otherwise let anyone replace the admin. Missing
+    server credentials are fixed by the admin in Settings → Media Servers.
+    """
     admin = get_admin()
-    if not (admin and admin.get("username") and admin.get("password_hash")):
-        return True
-    if not providers.configured_engines():
-        return True
-    return False
+    return not (admin and admin.get("username") and admin.get("password_hash"))
 
 
 # ── Dispatch helpers ──────────────────────────────────────────────────
@@ -519,10 +522,18 @@ def api_change_credentials():
 
 
 # ── Routes: config ────────────────────────────────────────────────────
+# Never sent to the browser: the frontend doesn't need them, and returning
+# them would expose every credential to anyone holding a session.
+_CONFIG_SECRET_KEYS = ("admin", "plex_token", "jellyfin_api_key", "webhook_secret")
+
+
 @app.route("/api/config")
 @login_required_api
 def api_get_config():
-    return jsonify(load_config())
+    cfg = load_config()
+    for key in _CONFIG_SECRET_KEYS:
+        cfg.pop(key, None)
+    return jsonify(cfg)
 
 
 @app.route("/api/config", methods=["POST"])
