@@ -94,12 +94,21 @@ async function openSettings(){
   // Users section
   h+='<div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1rem"><h3 style="margin-bottom:0.5rem">Manage Users</h3>';
   h+='<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.6rem">Hidden users are excluded from all watch tracking and assignments.</div>';
-  for(const a of allAccs){
+  // Plex accounts that no longer have access (former shares, deleted
+  // accounts) go in a collapsed list; they're already excluded from tracking.
+  const formerAccs=allAccs.filter(a=>a.former);
+  for(const a of allAccs.filter(a=>!a.former)){
     h+='<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.3rem">';
     h+='<span style="flex:1;font-size:0.85rem;'+(a.hidden?"opacity:0.4;text-decoration:line-through":"")+'">'+esc(a.name)+'</span>';
     if(a.hidden){h+="<button class=\"btn-settings\" style=\"padding:0.2rem 0.6rem;font-size:0.75rem\" onclick=\"unhideAccount('"+esc(a.id)+"')\">Show</button>";}
     else{h+="<button class=\"btn-cancel\" style=\"padding:0.2rem 0.6rem;font-size:0.75rem\" onclick=\"hideAccount('"+esc(a.id)+"')\">Hide</button>";}
     h+='</div>';
+  }
+  if(formerAccs.length){
+    h+='<details class="former-users"><summary>Former users ('+formerAccs.length+')</summary>';
+    h+='<div class="former-users-note">No longer have access to your Plex server, so they\'re excluded from watch tracking and assignments.</div>';
+    for(const a of formerAccs)h+='<div class="former-user">'+esc(a.name)+'</div>';
+    h+='</details>';
   }
   h+='</div>';
   // Webhook section — one URL per enabled provider.

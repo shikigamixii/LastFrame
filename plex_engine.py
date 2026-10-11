@@ -23,6 +23,7 @@ from plex_api import (
     get_plex_url, get_plex_token, get_webhook_secret,
     plex_get, plex_delete, plex_get_raw, plex_get_with_token,
     plex_accounts, plex_all_accounts, plex_owner_id, _local_account_id,
+    plex_current_roster, plex_is_current_account,
     plex_sections, plex_genre_id, plex_tv_home_users, plex_tv_switch_token,
     plex_tv_switch_token_diag, plex_refresh_access_tokens,
     ts_to_iso, parse_plex_guids, get_item_providers as _raw_item_providers,
@@ -81,10 +82,14 @@ def accounts():
 def all_accounts():
     cfg = load_config()
     hidden = set(cfg.get("hidden_accounts", []))
+    accts = plex_all_accounts()
+    roster = plex_current_roster()
+    owner = plex_owner_id() if roster is not None else None
     out = []
-    for a in plex_all_accounts():
+    for a in accts:
         nsid = _ns(a["id"])
-        out.append({"id": nsid, "name": a["name"] or f"(unnamed #{a['id']})", "hidden": nsid in hidden})
+        out.append({"id": nsid, "name": a["name"] or f"(unnamed #{a['id']})", "hidden": nsid in hidden,
+                    "former": not plex_is_current_account(a["id"], a["name"], roster, owner)})
     return out
 
 

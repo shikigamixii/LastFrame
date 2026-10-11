@@ -228,16 +228,104 @@ def plex_get_raw(path, params=None):
     r.raise_for_status()
     return r
 
+# ── current-user roster (plex.tv) ─────────────────────────────────────
+# The PMS /accounts list keeps every account that ever had access, so former
+# shares and deleted accounts linger forever. plex.tv knows who currently has
+# access: the Home users plus friends this server is shared with. Cached
+# because every lookup crosses the internet; on failure the last good roster
+# is reused, and with none at all nobody is filtered out.
+_ROSTER_TTL = 300
+_roster_cache = {"ts": 0.0, "value": None}
+
+
+def _plex_machine_id():
+    try:
+        return str(plex_get("/").get("machineIdentifier") or "")
+    except Exception:
+        return ""
+
+
+def plex_tv_shared_users(machine_id=""):
+    """Friends with access to this server: [{'id','title','username'}].
+
+    plex.tv/api/users lists friends even after a share is removed, so when the
+    server's machine id is known only users with a <Server> entry for it count.
+    """
+    from xml.etree import ElementTree as ET
+    if not get_plex_token():
+        return []
+    r = _session.get("https://plex.tv/api/users",
+                     headers=_plex_tv_headers({"Accept": "application/xml"}), timeout=10)
+    r.raise_for_status()
+    out = []
+    for u in ET.fromstring(r.content).findall("User"):
+        if machine_id:
+            servers = [srv.attrib.get("machineIdentifier") for srv in u.findall("Server")]
+            if machine_id not in servers:
+                continue
+        out.append({"id": u.attrib.get("id"),
+                    "title": (u.attrib.get("title") or "").strip(),
+                    "username": (u.attrib.get("username") or "").strip()})
+    return out
+
+
+def plex_current_roster():
+    """{'ids': set, 'names': set} of accounts that currently have access, or
+    None when plex.tv has never been reachable (callers then filter nothing)."""
+    now = time.monotonic()
+    if _roster_cache["value"] is not None and now - _roster_cache["ts"] < _ROSTER_TTL:
+        return _roster_cache["value"]
+    try:
+        users = plex_tv_home_users() + plex_tv_shared_users(_plex_machine_id())
+        ids, names = set(), set()
+        for u in users:
+            if u.get("id"):
+                ids.add(str(u["id"]))
+            for n in (u.get("title"), u.get("username")):
+                if n:
+                    names.add(n.strip().lower())
+        _roster_cache.update(ts=now, value={"ids": ids, "names": names})
+    except Exception:
+        # Keep serving the last good roster; retry on the next TTL window.
+        _roster_cache["ts"] = now
+    return _roster_cache["value"]
+
+
+def plex_is_current_account(account_id, name, roster=None, owner_id=None):
+    """True unless plex.tv's roster positively shows the account has no access.
+    The server owner always counts. Matches by id, then by display name."""
+    roster = roster if roster is not None else plex_current_roster()
+    if roster is None:
+        return True
+    aid = str(account_id)
+    if aid == str(owner_id if owner_id is not None else plex_owner_id()):
+        return True
+    if aid in roster["ids"]:
+        return True
+    return bool(name) and name.strip().lower() in roster["names"]
+
+
 def plex_accounts():
+    """Visible accounts: named, not hidden, and still with access (former
+    shares and deleted accounts drop out of watch tracking automatically)."""
     cfg = load_config()
     hidden = set(cfg.get("hidden_accounts", []))
     mc = plex_get("/accounts")
-    return [{"id": str(a["id"]), "name": (a.get("name") or a.get("title") or "").strip()}
-            for a in mc.get("Account", [])
-            if a.get("id", 0) != 0
-            and (a.get("name") or a.get("title") or "").strip()
-            and str(a["id"]) not in hidden
-            and idutil.make_id("plex", str(a["id"])) not in hidden]
+    accts = mc.get("Account", [])
+    roster = plex_current_roster()
+    owner = _owner_from_accounts(accts)
+    out = []
+    for a in accts:
+        aid = str(a.get("id", 0))
+        name = (a.get("name") or a.get("title") or "").strip()
+        if aid == "0" or not name:
+            continue
+        if aid in hidden or idutil.make_id("plex", aid) in hidden:
+            continue
+        if not plex_is_current_account(aid, name, roster, owner):
+            continue
+        out.append({"id": aid, "name": name})
+    return out
 
 def plex_all_accounts():
     """All non-system accounts regardless of name or hidden status"""
@@ -245,12 +333,14 @@ def plex_all_accounts():
     return [{"id": str(a["id"]), "name": (a.get("name") or a.get("title") or "").strip()}
             for a in mc.get("Account", []) if a.get("id", 0) != 0]
 
+def _owner_from_accounts(accts):
+    ids = sorted([int(a["id"]) for a in accts if a.get("id", 0) > 0])
+    return str(ids[0]) if ids else None
+
 def plex_owner_id():
     """The token owner's account ID — Plex viewCount data is only accurate for this account."""
     try:
-        mc = plex_get("/accounts")
-        ids = sorted([int(a["id"]) for a in mc.get("Account", []) if a.get("id", 0) > 0])
-        return str(ids[0]) if ids else None
+        return _owner_from_accounts(plex_get("/accounts").get("Account", []))
     except Exception:
         return None
 
