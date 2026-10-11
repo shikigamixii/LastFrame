@@ -62,4 +62,10 @@ def init_db():
         handled       INTEGER NOT NULL DEFAULT 0,
         handled_at    TEXT,
         PRIMARY KEY (provider_type, provider_id))""")
+    # Admin login sessions (see auth_sessions.py). Only a hash of each
+    # session id is stored; times are Unix seconds.
+    db.execute("""CREATE TABLE IF NOT EXISTS auth_sessions (
+        sid_hash   TEXT PRIMARY KEY,
+        created_at REAL NOT NULL,
+        last_seen  REAL NOT NULL)""")
     db.commit(); db.close()

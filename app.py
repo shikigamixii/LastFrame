@@ -24,6 +24,7 @@ from db import get_db, init_db
 import idutil
 import providers
 import console_log
+import auth_sessions
 from plex_api import set_request_hook as _plex_set_request_hook
 from jellyfin_api import set_request_hook as _jf_set_request_hook
 from assignments import (
@@ -94,6 +95,8 @@ limiter = Limiter(get_remote_address, app=app,
 _SECRET_PATTERNS = (
     re.compile(r'((?:X-Plex-Token|X-Emby-Token|api_key|ApiKey)[\'"]?\s*[:=]\s*[\'"]?)[^&\s\'",}]+', re.I),
     re.compile(r'(MediaBrowser\s+Token=")[^"]*', re.I),
+    # Webhook secret sent as a query parameter (Plex can only send it that way).
+    re.compile(r'([?&]secret=)[^&\s\'"]+', re.I),
 )
 
 
@@ -312,7 +315,29 @@ def _perf_log(resp):
 
 # ── Auth helpers ──────────────────────────────────────────────────────
 def is_admin_logged_in():
-    return session.get("logged_in") is True
+    # The signed cookie alone isn't enough: its session id must still be on
+    # record server-side, so logout, credential changes and expiry take effect.
+    return session.get("logged_in") is True and auth_sessions.is_valid(session.get("sid"))
+
+
+def _clear_auth():
+    # Only the login keys: the page's CSRF token also lives in the session and
+    # must survive login/logout, or every later POST from the open page fails.
+    for key in ("logged_in", "username", "sid"):
+        session.pop(key, None)
+
+
+def _start_session(username):
+    auth_sessions.revoke(session.get("sid"))
+    _clear_auth()
+    session["logged_in"] = True
+    session["username"] = username
+    session["sid"] = auth_sessions.create()
+
+
+def _end_session():
+    auth_sessions.revoke(session.get("sid"))
+    _clear_auth()
 
 
 def login_required_api(f):
@@ -394,7 +419,8 @@ def setup_page():
 
 @app.route("/api/auth/status")
 def auth_status():
-    resp = {"logged_in": is_admin_logged_in(), "username": session.get("username"),
+    logged_in = is_admin_logged_in()
+    resp = {"logged_in": logged_in, "username": session.get("username") if logged_in else None,
             "needs_setup": is_setup_needed()}
     if resp["needs_setup"]:
         resp["plex_url_from_env"] = os.environ.get("PLEX_URL", "")
@@ -459,8 +485,7 @@ def api_setup():
     cfg["plex_enabled"] = plex_ok
     cfg["jellyfin_enabled"] = jf_ok
     save_config(cfg)
-    session["logged_in"] = True
-    session["username"] = username
+    _start_session(username)
     safe_u = re.sub(r'[\x00-\x1f\x7f]', '', username)
     app.logger.info(f"Initial setup: admin '{safe_u}' created from {request.remote_addr}")
     return jsonify({"success": True})
@@ -474,8 +499,7 @@ def api_login():
     password = data.get("password", "")
     safe_u = re.sub(r'[\x00-\x1f\x7f]', '', username or "")
     if verify_admin(username, password):
-        session["logged_in"] = True
-        session["username"] = username
+        _start_session(username)
         app.logger.info(f"Successful login for '{safe_u}' from {request.remote_addr}")
         return jsonify({"success": True})
     app.logger.warning(f"Failed login attempt for '{safe_u}' from {request.remote_addr}")
@@ -484,8 +508,7 @@ def api_login():
 
 @app.route("/api/auth/logout", methods=["POST"])
 def api_logout():
-    session.pop("logged_in", None)
-    session.pop("username", None)
+    _end_session()
     return jsonify({"success": True})
 
 
@@ -515,8 +538,9 @@ def api_change_credentials():
         safe_old = re.sub(r'[\x00-\x1f\x7f]', '', current_username)
         safe_new = re.sub(r'[\x00-\x1f\x7f]', '', new_username)
         app.logger.info(f"Admin credentials changed from {safe_old} to {safe_new} from {request.remote_addr}")
-        session.pop("logged_in", None)
-        session.pop("username", None)
+        # Sign out every session, including any opened with the old password.
+        auth_sessions.revoke_all()
+        _clear_auth()
         return jsonify({"success": True, "message": msg})
     return jsonify({"success": False, "error": msg}), 400
 
