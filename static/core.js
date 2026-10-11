@@ -88,7 +88,9 @@ function closeSidebar(){const sb=document.getElementById("sidebar"),bd=document.
 function nav(hash){closeSidebar();history.pushState(null,'','#'+hash);renderSidebar();route();}
 async function route(){
   const h=(location.hash||'#/').slice(1),p=h.split('/').filter(Boolean);
+  stopConsolePolling();
   if(!p.length)return viewLibraries();
+  if(p[0]==='console')return viewConsole();
   if(p[0]==='recently-added')return viewRecentlyAdded();
   if(p[0]==='recent'&&p[1]){
     if(p[2]==='p')return viewRecentAll(p[1],parseInt(p[3])||1);

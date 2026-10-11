@@ -23,6 +23,7 @@ from config_store import (
 from db import get_db, init_db
 import idutil
 import providers
+import console_log
 from plex_api import set_request_hook as _plex_set_request_hook
 from jellyfin_api import set_request_hook as _jf_set_request_hook
 from assignments import (
@@ -121,6 +122,10 @@ logging.basicConfig(
 )
 for _h in logging.getLogger().handlers:
     _h.addFilter(_RedactFilter())
+# Console page buffer: receives INFO+ from every logger via root, plus the
+# console-only VERBOSE/DEBUG records logged through console_log.logger.
+console_log.handler.addFilter(_RedactFilter())
+logging.getLogger().addHandler(console_log.handler)
 
 PORT = int(os.environ.get("PORT", "8080"))
 
@@ -220,10 +225,12 @@ def _log_unhandled(e):
     resp = getattr(e, "response", None)
     if isinstance(e, http_requests.HTTPError) and resp is not None and resp.status_code == 404:
         print(f"[404] {request.method} {request.path}: not found on media server", file=sys.stderr, flush=True)
+        console_log.logger.warning(f"{request.method} {request.path}: not found on media server")
         return jsonify({"error": "not found"}), 404
     import traceback
     print(_redact(f"[500] {request.method} {request.path}: {type(e).__name__}: {e}"), file=sys.stderr, flush=True)
     print(_redact(traceback.format_exc()), file=sys.stderr, end="", flush=True)
+    console_log.logger.error(f"{request.method} {request.path}: {type(e).__name__}: {e}\n{traceback.format_exc()}")
     return jsonify({"error": "Internal server error"}), 500
 
 
@@ -243,8 +250,35 @@ def _perf_record(path, dur):
         calls.append((path, dur))
 
 
-_plex_set_request_hook(_perf_record)
-_jf_set_request_hook(_perf_record)
+def _provider_call_hook(provider):
+    def hook(path, dur):
+        _perf_record(path, dur)
+        console_log.logger.debug(f"{provider} call {path} {int(dur * 1000)}ms")
+    return hook
+
+
+_plex_set_request_hook(_provider_call_hook("plex"))
+_jf_set_request_hook(_provider_call_hook("jellyfin"))
+
+
+# Console page: one VERBOSE line per request. The console's own polling and
+# static files are skipped so they don't drown everything else out.
+_CONSOLE_SKIP_PREFIXES = ("/api/logs", "/static/")
+
+
+@app.before_request
+def _console_req_start():
+    g._console_t0 = time.monotonic()
+
+
+@app.after_request
+def _console_req_log(resp):
+    t0 = getattr(g, "_console_t0", None)
+    if t0 is not None and not request.path.startswith(_CONSOLE_SKIP_PREFIXES):
+        ms = int((time.monotonic() - t0) * 1000)
+        console_log.logger.log(console_log.VERBOSE,
+                               f"{request.method} {request.path} {resp.status_code} {ms}ms")
+    return resp
 
 
 @app.before_request
@@ -269,9 +303,10 @@ def _perf_log(resp):
         slot[1] += d
     parts = sorted(agg.items(), key=lambda x: -x[1][1])[:5]
     breakdown = ", ".join(f"{p}({n}x={int(t * 1000)}ms)" for p, (n, t) in parts) or "-"
-    print(f"[PERF] {request.path} {resp.status_code} total={total_ms}ms "
-          f"provider_calls={len(calls)} provider_total={prov_total_ms}ms top={breakdown}",
-          file=sys.stderr, flush=True)
+    perf_line = (f"[PERF] {request.path} {resp.status_code} total={total_ms}ms "
+                 f"provider_calls={len(calls)} provider_total={prov_total_ms}ms top={breakdown}")
+    print(perf_line, file=sys.stderr, flush=True)
+    console_log.logger.debug(perf_line)
     return resp
 
 
@@ -1131,6 +1166,19 @@ def proxy_image(item_id):
 
 
 # ── Routes: Plex-only diagnostics ─────────────────────────────────────
+@app.route("/api/logs")
+@limiter.limit("60 per minute")
+@login_required_api
+def api_logs():
+    """Console page feed: buffered log entries newer than ?after=<id>."""
+    try:
+        after = max(0, int(request.args.get("after", 0)))
+    except (TypeError, ValueError):
+        after = 0
+    entries, last_id = console_log.handler.entries(after=after)
+    return jsonify({"entries": entries, "last_id": last_id, "max_entries": console_log.MAX_ENTRIES})
+
+
 @app.route("/api/admin/debug-history")
 @login_required_api
 def api_debug_history():

@@ -885,5 +885,77 @@ async function runAutoDeleteSweep(){
   });
 })();
 
+// ── Console (in-app log viewer) ───────────────────────────────────────
+// Polls /api/logs for entries newer than the last one seen. The server keeps
+// the last 2000 lines in memory; the level filter matches one level exactly
+// ("All" shows everything), and the text filter matches message or source.
+const CONSOLE_LEVELS=[['all','All'],['verbose','Verbose'],['debug','Debug'],['info','Info'],['warning','Warning'],['error','Error']];
+const CONSOLE_POLL_MS=3000;
+const _con={entries:[],lastId:0,max:2000,level:'all',q:'',paused:false,timer:null,pinned:true};
+function stopConsolePolling(){if(_con.timer){clearInterval(_con.timer);_con.timer=null;}document.removeEventListener('click',_conCloseMenu);}
+async function viewConsole(){
+  stopHomePolling();
+  crumbs([{label:'Home',hash:'/'},{label:'Console'}]);
+  _con.entries=[];_con.lastId=0;_con.pinned=true;
+  const el=$el();
+  el.innerHTML=`<h2 style="margin-bottom:0.4rem">Console</h2>`
+    +`<div class="assign-desc" style="margin-bottom:1rem">Live app logs, newest at the bottom. The last 2000 lines are kept in memory and cleared when the app restarts.</div>`
+    +`<div class="console-toolbar">`
+    +`<div class="console-level"><button class="console-level-btn" id="conLevelBtn" onclick="_conToggleMenu(event)"></button><div class="console-level-menu" id="conLevelMenu"></div></div>`
+    +`<input type="text" class="console-filter" id="conFilter" placeholder="Filter logs" value="${escAttr(_con.q)}" oninput="_conSetFilter(this.value)">`
+    +`<button class="btn-settings" id="conPauseBtn" onclick="_conTogglePause()"></button>`
+    +`<span class="console-status" id="conStatus"></span>`
+    +`</div>`
+    +`<div class="console-log" id="conLog" onscroll="_conOnScroll(this)"></div>`;
+  _conRenderLevelControls();_conRenderPause();
+  document.addEventListener('click',_conCloseMenu);
+  await _conPoll();
+  _con.timer=setInterval(()=>{if(!_con.paused)_conPoll();},CONSOLE_POLL_MS);
+}
+async function _conPoll(){
+  const st=document.getElementById('conStatus');
+  try{
+    const r=await api('/api/logs?after='+_con.lastId);
+    if(!document.getElementById('conLog'))return;
+    // Server restarted (ids began again): start over and refetch everything.
+    if(r.last_id<_con.lastId){_con.entries=[];_con.lastId=0;_conRender();return _conPoll();}
+    _con.max=r.max_entries||_con.max;
+    // Overlapping polls (e.g. the page opened twice quickly) can return the
+    // same lines; only keep ids newer than what's already shown.
+    const fresh=r.entries.filter(e=>e.id>_con.lastId);
+    if(fresh.length)_con.entries=_con.entries.concat(fresh).slice(-_con.max);
+    _con.lastId=Math.max(_con.lastId,r.last_id);
+    _conRender();
+  }catch(e){if(st)st.textContent='Update failed: '+e.message;}
+}
+function _conVisible(){
+  const q=_con.q.trim().toLowerCase();
+  return _con.entries.filter(e=>(_con.level==='all'||e.level===_con.level)
+    &&(!q||e.message.toLowerCase().includes(q)||(e.source||'').toLowerCase().includes(q)));
+}
+function _conFmtTs(ts){const d=new Date(ts);return isNaN(d)?'':d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour12:false});}
+function _conRender(){
+  const box=document.getElementById('conLog');if(!box)return;
+  const rows=_conVisible();
+  box.innerHTML=rows.length?rows.map(e=>`<div class="console-line lvl-${escAttr(e.level)}"><span class="con-ts">${esc(_conFmtTs(e.ts))}</span><span class="con-lvl">${esc(e.level.toUpperCase())}</span><span class="con-src">${esc(e.source||'')}</span><span class="con-msg">${esc(e.message)}</span></div>`).join('')
+    :'<div class="console-empty">No log lines match.</div>';
+  if(_con.pinned)box.scrollTop=box.scrollHeight;
+  const st=document.getElementById('conStatus');
+  if(st)st.textContent=`${rows.length} of ${_con.entries.length} lines`+(_con.paused?' · paused':'');
+}
+function _conOnScroll(box){_con.pinned=box.scrollHeight-box.scrollTop-box.clientHeight<40;}
+function _conRenderLevelControls(){
+  const label=(CONSOLE_LEVELS.find(l=>l[0]===_con.level)||CONSOLE_LEVELS[0])[1];
+  const btn=document.getElementById('conLevelBtn');if(btn)btn.innerHTML=esc(label)+' <span class="console-caret">▾</span>';
+  const menu=document.getElementById('conLevelMenu');if(!menu)return;
+  menu.innerHTML=CONSOLE_LEVELS.map(([k,l],i)=>`<div class="console-level-item${k===_con.level?' selected':''}" onclick="_conSetLevel('${k}')"><span>${esc(l)}</span>${k===_con.level?'<span class="console-check">✓</span>':''}</div>`+(i===0?'<div class="console-level-sep"></div>':'')).join('');
+}
+function _conToggleMenu(ev){ev.stopPropagation();const m=document.getElementById('conLevelMenu');if(m)m.classList.toggle('open');}
+function _conCloseMenu(){const m=document.getElementById('conLevelMenu');if(m)m.classList.remove('open');}
+function _conSetLevel(k){_con.level=k;_conCloseMenu();_conRenderLevelControls();_con.pinned=true;_conRender();}
+const _conSetFilter=debounce(v=>{_con.q=v;_conRender();},150);
+function _conRenderPause(){const b=document.getElementById('conPauseBtn');if(b)b.textContent=_con.paused?'▶ Resume':'⏸ Pause';}
+function _conTogglePause(){_con.paused=!_con.paused;_conRenderPause();if(!_con.paused){_con.pinned=true;_conPoll();}else _conRender();}
+
 // Init
-(async()=>{if(!await checkAuth())return;try{const[u,l]=await Promise.all([api("/api/users"),api("/api/libraries")]);S.users=u;S.libraries=l;}catch(e){if(!e.message.includes("Unauthorized"))$el().innerHTML='<div class="empty-state">Failed to connect to Jellyfin</div>';return;}route();})();
+(async()=>{if(!await checkAuth())return;try{const[u,l]=await Promise.all([api("/api/users"),api("/api/libraries")]);S.users=u;S.libraries=l;}catch(e){if(e.message.includes("Unauthorized"))return;if((location.hash||'').startsWith('#/console'))return route();$el().innerHTML='<div class="empty-state">Failed to connect to Jellyfin</div>';return;}route();})();
