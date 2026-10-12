@@ -957,5 +957,24 @@ const _conSetFilter=debounce(v=>{_con.q=v;_conRender();},150);
 function _conRenderPause(){const b=document.getElementById('conPauseBtn');if(b)b.textContent=_con.paused?'▶ Resume':'⏸ Pause';}
 function _conTogglePause(){_con.paused=!_con.paused;_conRenderPause();if(!_con.paused){_con.pinned=true;_conPoll();}else _conRender();}
 
+// ── App version / update notice (sidebar footer) ──────────────────────
+// The server checks GitHub at most once a day; this only reads its answer.
+// A dismissed notice stays hidden for that version only (per browser).
+const UPDATE_DISMISS_KEY='lastframe.dismissedUpdate';
+function _getDismissedUpdate(){try{return localStorage.getItem(UPDATE_DISMISS_KEY)||'';}catch(e){return '';}}
+function dismissUpdate(btn){try{localStorage.setItem(UPDATE_DISMISS_KEY,btn.dataset.version||'');}catch(e){}const b=btn.closest('.update-badge-row');if(b)b.remove();}
+async function loadVersion(){
+  const el=document.getElementById('appVersion');if(!el)return;
+  try{
+    const v=await api('/api/version');
+    let h='<span class="app-version-num" title="LastFrame version">v'+esc(v.version)+'</span>';
+    if(v.update_available&&v.latest&&_getDismissedUpdate()!==v.latest.version){
+      h+='<div class="update-badge-row"><a class="update-badge" href="'+escAttr(v.latest.url)+'" target="_blank" rel="noopener noreferrer" title="'+escAttr(v.latest.name)+'">Update available: v'+esc(v.latest.version)+'</a>'
+        +'<button class="update-dismiss" data-version="'+escAttr(v.latest.version)+'" onclick="dismissUpdate(this)" title="Dismiss" aria-label="Dismiss update notice">✕</button></div>';
+    }
+    el.innerHTML=h;
+  }catch(e){el.innerHTML='';}
+}
+
 // Init
-(async()=>{if(!await checkAuth())return;try{const[u,l]=await Promise.all([api("/api/users"),api("/api/libraries")]);S.users=u;S.libraries=l;}catch(e){if(e.message.includes("Unauthorized"))return;if((location.hash||'').startsWith('#/console'))return route();$el().innerHTML='<div class="empty-state">Failed to connect to Jellyfin</div>';return;}route();})();
+(async()=>{if(!await checkAuth())return;loadVersion();try{const[u,l]=await Promise.all([api("/api/users"),api("/api/libraries")]);S.users=u;S.libraries=l;}catch(e){if(e.message.includes("Unauthorized"))return;if((location.hash||'').startsWith('#/console'))return route();$el().innerHTML='<div class="empty-state">Failed to connect to Jellyfin</div>';return;}route();})();

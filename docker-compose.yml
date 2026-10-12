@@ -26,5 +26,7 @@ services:
       # Number of reverse proxies in front of LastFrame (0 = none). Must be
       # right for login rate limiting and HTTPS detection; see README.
       - TRUSTED_PROXY_HOPS=${TRUSTED_PROXY_HOPS:-0}
+      # Set to 0 to never contact GitHub for update checks (overrides Settings).
+      - LASTFRAME_UPDATE_CHECK=${LASTFRAME_UPDATE_CHECK:-}
       - DATA_DIR=/data
     restart: unless-stopped

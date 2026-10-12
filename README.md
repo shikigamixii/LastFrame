@@ -257,7 +257,26 @@ there yourself if you need them.
 | `SESSION_COOKIE_SECURE` | off | Set to `1` when LastFrame is served over HTTPS |
 | `TRUSTED_PROXY_HOPS` | `0` | Number of reverse proxies in front of LastFrame; set to `1` behind a single proxy so client IPs and HTTPS are detected correctly. Getting it wrong weakens the login rate limit — LastFrame logs a warning if it looks misconfigured |
 | `PLEX_HISTORY_POLL_INTERVAL` | `300` | Seconds between Plex play-history polls (for users that don't send webhooks) |
+| `LASTFRAME_UPDATE_CHECK` | on | Set to `0` to never contact GitHub for update checks (overrides the Settings switch) |
 | `RECENTLY_ADDED_SWEEP_INTERVAL` | `1800` | Seconds between Recently Added scans |
+
+---
+
+## Version & updates
+
+The running version is shown at the bottom of the sidebar. Once a day the
+server checks GitHub for the latest LastFrame release; if a newer one is out,
+an **Update available** notice appears there, linking to its release notes.
+Dismissing it hides it until the next release.
+
+- Turn the check off in **Settings → Updates**, or set
+  `LASTFRAME_UPDATE_CHECK=0` in `.env` to make sure it never runs.
+- The check is a single request to `api.github.com` that includes only the
+  LastFrame version; nothing about your libraries or users is sent. As with
+  any request, GitHub sees your server's IP address.
+- Builds from the `develop` branch show a `-dev` version (e.g. `2.2.0-dev`).
+
+To update: `git pull`, then `docker compose up -d --build`.
 
 ---
 

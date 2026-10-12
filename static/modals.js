@@ -159,6 +159,10 @@ async function openSettings(){
   h+='<div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1rem"><h3 style="margin-bottom:0.5rem">Display Timezone</h3>';
   h+='<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">IANA timezone for displaying timestamps (e.g. <code>America/New_York</code>, <code>Europe/London</code>). Leave blank to use browser timezone.</div>';
   h+='<input id="cfgTimezone" type="text" value="'+escAttr(cfgTz)+'" placeholder="e.g. America/Los_Angeles" style="width:100%;padding:0.4rem 0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:0.85rem;font-family:monospace"></div>';
+  const updOn=cfg.update_check_enabled!==false;
+  h+='<div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1rem"><h3 style="margin-bottom:0.5rem">Updates</h3>';
+  h+='<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">Once a day, the server asks GitHub for the latest LastFrame release and shows a notice in the sidebar when a newer one is out. Turning this off stops all update checks.</div>';
+  h+='<label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer"><div class="toggle-switch '+(updOn?'on':'')+'" id="updCheckToggle" onclick="this.classList.toggle(\'on\')"></div><span style="font-size:0.88rem">Check for updates</span></label></div>';
   $("#settingsBody").innerHTML=h;
 }
 function toggleAdMaster(el){
@@ -205,6 +209,8 @@ async function saveSettings(){
   const cfg={monitored_libraries:en,show_all_libraries:en.length===ts.length,
     auto_delete_enabled:adEnabled,auto_delete_libraries:adLibs,auto_delete_grace_days:adGrace,
     auto_delete_min_delay_minutes:adMinDelay,timezone:tz,recently_added_window_days:raWin};
+  const updToggle=document.getElementById("updCheckToggle");
+  if(updToggle)cfg.update_check_enabled=updToggle.classList.contains("on");
   // Provider enable/disable toggles.
   document.querySelectorAll("#settingsBody .prov-toggle").forEach(t=>{
     if(t.dataset.provKey)cfg[t.dataset.provKey+"_enabled"]=t.classList.contains("on");
@@ -216,7 +222,7 @@ async function saveSettings(){
     if(f&&v)cfg[f]=v;
   });
   await api("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)});
-  S.config=cfg;S.libraries=[];closeSettings();nav('/');
+  S.config=cfg;S.libraries=[];closeSettings();loadVersion();nav('/');
 }
 async function clearWebhookEvents(){if(!confirm("Clear all stored webhook events? Watch state will rely on Jellyfin UserData until new events arrive."))return;await api("/api/webhook-events",{method:"DELETE"});openSettings();}
 

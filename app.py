@@ -26,6 +26,7 @@ import idutil
 import providers
 import console_log
 import auth_sessions
+import update_check
 from plex_api import set_request_hook as _plex_set_request_hook
 from jellyfin_api import set_request_hook as _jf_set_request_hook
 from assignments import (
@@ -654,6 +655,8 @@ def api_save_config():
         cfg["auto_delete_min_delay_minutes"] = max(0, int(incoming["auto_delete_min_delay_minutes"] or 0))
     if "timezone" in incoming:
         cfg["timezone"] = (incoming["timezone"] or "").strip()
+    if "update_check_enabled" in incoming:
+        cfg["update_check_enabled"] = bool(incoming["update_check_enabled"])
     if "recently_added_window_days" in incoming:
         try:
             days = int(incoming["recently_added_window_days"])
@@ -1290,6 +1293,13 @@ def api_logs():
         after = 0
     entries, last_id = console_log.handler.entries(after=after)
     return jsonify({"entries": entries, "last_id": last_id, "max_entries": console_log.MAX_ENTRIES})
+
+
+@app.route("/api/version")
+@login_required_api
+def api_version():
+    """Running version, and the latest GitHub release when the check is on."""
+    return jsonify(update_check.status())
 
 
 @app.route("/api/admin/debug-history")
