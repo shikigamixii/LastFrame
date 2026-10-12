@@ -967,9 +967,10 @@ async function loadVersion(){
   const el=document.getElementById('appVersion');if(!el)return;
   try{
     const v=await api('/api/version');
-    let h='<span class="app-version-num" title="LastFrame version">v'+esc(v.version)+'</span>';
+    const dev=v.channel==='develop';
+    let h='<span class="app-version-num" title="LastFrame version ('+escAttr(v.channel||'')+' branch)">v'+esc(v.version)+(dev?' · develop':'')+'</span>';
     if(v.update_available&&v.latest&&_getDismissedUpdate()!==v.latest.version){
-      h+='<div class="update-badge-row"><a class="update-badge" href="'+escAttr(v.latest.url)+'" target="_blank" rel="noopener noreferrer" title="'+escAttr(v.latest.name)+'">Update available: v'+esc(v.latest.version)+'</a>'
+      h+='<div class="update-badge-row"><a class="update-badge" href="'+escAttr(v.latest.url)+'" target="_blank" rel="noopener noreferrer" title="'+escAttr(v.latest.name)+'">'+(dev?'New develop build':'Update available')+': v'+esc(v.latest.version)+'</a>'
         +'<button class="update-dismiss" data-version="'+escAttr(v.latest.version)+'" onclick="dismissUpdate(this)" title="Dismiss" aria-label="Dismiss update notice">✕</button></div>';
     }
     el.innerHTML=h;

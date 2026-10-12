@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 *.pyo
 .git/
+# ...except HEAD, which records the branch (stable/develop) for the update check.
+!.git/HEAD
 .gitignore
 .dockerignore
 .env

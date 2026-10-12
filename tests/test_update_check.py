@@ -19,7 +19,7 @@ class _Resp:
 
 @pytest.fixture
 def gh(monkeypatch):
-    uc._cache.update(checked_at=0.0, ok=False, latest=None)
+    uc._cache.update(checked_at=0.0, ok=False, latest=None, channel=None)
     state = {"calls": 0, "resp": _Resp(200, {"tag_name": "v2.3.0", "name": "LastFrame v2.3.0",
                                               "html_url": "https://github.com/shikigamixii/LastFrame/releases/tag/v2.3.0"})}
 
@@ -30,6 +30,7 @@ def gh(monkeypatch):
         return state["resp"]
     monkeypatch.setattr(uc.http_requests, "get", fake_get)
     monkeypatch.setattr(uc, "current_version", lambda: "2.2.0")
+    monkeypatch.setattr(uc, "git_branch", lambda: "stable")
     monkeypatch.setattr(uc, "load_config", lambda: {})
     monkeypatch.delenv("LASTFRAME_UPDATE_CHECK", raising=False)
     yield state
@@ -37,6 +38,10 @@ def gh(monkeypatch):
 
 
 def test_version_ordering():
+    assert uc.is_newer("2.2.0-dev.2", "2.2.0-dev.1")
+    assert uc.is_newer("2.2.0-dev.10", "2.2.0-dev.9")     # numeric, not text order
+    assert uc.is_newer("2.2.0-dev.1", "2.2.0-dev")        # more parts sorts later
+    assert uc.is_newer("2.2.0-dev.1", "2.1.0")
     assert uc.is_newer("2.2.0", "2.1.0")
     assert uc.is_newer("v2.10", "2.9.9")
     assert uc.is_newer("2.2.0", "2.2.0-dev")          # release beats its own dev build
@@ -58,20 +63,20 @@ def test_no_update_when_current(gh, monkeypatch):
 
 
 def test_checks_github_once_a_day(gh):
-    uc.latest_release(now=1000.0)
-    uc.latest_release(now=1000.0 + 3600)
+    uc.latest_release("stable", now=1000.0)
+    uc.latest_release("stable", now=1000.0 + 3600)
     assert gh["calls"] == 1
-    uc.latest_release(now=1000.0 + uc.CHECK_INTERVAL + 1)
+    uc.latest_release("stable", now=1000.0 + uc.CHECK_INTERVAL + 1)
     assert gh["calls"] == 2
 
 
 def test_failure_keeps_last_answer_and_retries_sooner(gh):
-    uc.latest_release(now=1000.0)
+    uc.latest_release("stable", now=1000.0)
     gh["resp"] = ConnectionError("offline")
     t = 1000.0 + uc.CHECK_INTERVAL + 1
-    assert uc.latest_release(now=t)["version"] == "2.3.0"          # last good answer kept
+    assert uc.latest_release("stable", now=t)["version"] == "2.3.0"          # last good answer kept
     gh["resp"] = _Resp(200, {"tag_name": "v2.4.0", "html_url": "https://github.com/shikigamixii/LastFrame/releases/tag/v2.4.0"})
-    assert uc.latest_release(now=t + uc.RETRY_INTERVAL + 1)["version"] == "2.4.0"
+    assert uc.latest_release("stable", now=t + uc.RETRY_INTERVAL + 1)["version"] == "2.4.0"
 
 
 def test_no_release_or_odd_tag_means_no_update(gh):
@@ -79,6 +84,9 @@ def test_no_release_or_odd_tag_means_no_update(gh):
     assert uc.status()["update_available"] is False
     uc._cache.update(checked_at=0.0)
     gh["resp"] = _Resp(200, {"tag_name": "Plex-v9.9"})
+    assert uc.status()["latest"] is None
+    uc._cache.update(checked_at=0.0)
+    gh["resp"] = _Resp(200, {"tag_name": "v2.3.0-dev.1"})   # never offer a pre-release to stable
     assert uc.status()["latest"] is None
 
 
@@ -107,3 +115,62 @@ def test_version_endpoint_requires_login():
     os.environ.setdefault("PLEX_HISTORY_POLL_INTERVAL", "0")
     import app as A
     assert A.app.test_client().get("/api/version").status_code == 401
+
+
+# ── channels: each branch only hears about its own builds ─────────────
+RELEASE_LIST = [
+    {"tag_name": "v2.3.0", "prerelease": False, "draft": False,
+     "html_url": "https://github.com/shikigamixii/LastFrame/releases/tag/v2.3.0"},
+    {"tag_name": "v2.4.0-dev.2", "prerelease": True, "draft": False,
+     "html_url": "https://github.com/shikigamixii/LastFrame/releases/tag/v2.4.0-dev.2"},
+    {"tag_name": "v2.4.0-dev.10", "prerelease": True, "draft": False,
+     "html_url": "https://github.com/shikigamixii/LastFrame/releases/tag/v2.4.0-dev.10"},
+    {"tag_name": "v2.4.0-dev.11", "prerelease": True, "draft": True,
+     "html_url": "https://github.com/shikigamixii/LastFrame/releases/tag/v2.4.0-dev.11"},
+]
+
+
+def test_develop_sees_only_newest_prerelease(gh, monkeypatch):
+    monkeypatch.setattr(uc, "git_branch", lambda: "develop")
+    monkeypatch.setattr(uc, "current_version", lambda: "2.4.0-dev.2")
+    gh["resp"] = _Resp(200, RELEASE_LIST)
+    s = uc.status()
+    assert s["channel"] == "develop" and s["update_available"] is True
+    assert s["latest"]["version"] == "2.4.0-dev.10"       # not the stable v2.3.0, not the draft
+
+
+def test_develop_never_offered_stable_release(gh, monkeypatch):
+    monkeypatch.setattr(uc, "git_branch", lambda: "develop")
+    monkeypatch.setattr(uc, "current_version", lambda: "2.2.0-dev.1")
+    gh["resp"] = _Resp(200, [RELEASE_LIST[0]])            # only a (newer) stable release exists
+    s = uc.status()
+    assert s["latest"] is None and s["update_available"] is False
+
+
+def test_stable_never_offered_prerelease(gh):
+    gh["resp"] = _Resp(200, {"tag_name": "v2.4.0-dev.10", "prerelease": True})
+    assert uc.status()["update_available"] is False
+
+
+def test_channel_detection(monkeypatch, tmp_path):
+    monkeypatch.setattr(uc, "APP_DIR", str(tmp_path))
+    (tmp_path / ".git").mkdir()
+    head = tmp_path / ".git" / "HEAD"
+    monkeypatch.setattr(uc, "current_version", lambda: "2.2.0")
+    head.write_text("ref: refs/heads/develop\n")
+    assert uc.git_branch() == "develop" and uc.channel() == "develop"
+    head.write_text("ref: refs/heads/stable\n")
+    assert uc.channel() == "stable"
+    head.write_text("4fcd0120ffa772f593a5f80976596dd814b25f24\n")   # detached, e.g. a tag
+    assert uc.git_branch() is None and uc.channel() == "stable"
+    monkeypatch.setattr(uc, "current_version", lambda: "2.2.0-dev.3")
+    assert uc.channel() == "develop"                       # falls back to the version
+    head.unlink()
+    assert uc.channel() == "develop"
+
+
+def test_dockerignore_keeps_git_head():
+    import os
+    lines = [l.strip() for l in open(os.path.join(os.path.dirname(__file__), "..", ".dockerignore"))]
+    assert ".git/" in lines and "!.git/HEAD" in lines
+    assert lines.index("!.git/HEAD") > lines.index(".git/")    # exception must come after

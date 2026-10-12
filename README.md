@@ -265,18 +265,36 @@ there yourself if you need them.
 ## Version & updates
 
 The running version is shown at the bottom of the sidebar. Once a day the
-server checks GitHub for the latest LastFrame release; if a newer one is out,
-an **Update available** notice appears there, linking to its release notes.
-Dismissing it hides it until the next release.
+server checks GitHub for a newer build **on the branch you installed from**,
+and shows a notice linking to its release notes. Dismissing it hides it until
+the next one.
+
+| You run | You're told about | Never told about |
+| --- | --- | --- |
+| `stable` | New releases (e.g. `v2.3.0`) | Pre-releases, unreleased commits |
+| `develop` | New pre-releases the maintainer marks as ready (e.g. `v2.2.0-dev.2`) | Stable releases, unreleased commits |
+
+To update:
+
+```bash
+# stable
+git pull
+docker compose up -d --build
+
+# develop: switch to the exact pre-release named in the notice
+git fetch --tags
+git checkout v2.2.0-dev.2      # the version from the notice
+docker compose up -d --build
+```
+
+On `develop`, use the pre-release tag rather than `git pull`: the branch
+itself can contain unfinished work between pre-releases.
 
 - Turn the check off in **Settings → Updates**, or set
   `LASTFRAME_UPDATE_CHECK=0` in `.env` to make sure it never runs.
 - The check is a single request to `api.github.com` that includes only the
   LastFrame version; nothing about your libraries or users is sent. As with
   any request, GitHub sees your server's IP address.
-- Builds from the `develop` branch show a `-dev` version (e.g. `2.2.0-dev`).
-
-To update: `git pull`, then `docker compose up -d --build`.
 
 ---
 
