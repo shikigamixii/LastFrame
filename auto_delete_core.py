@@ -37,30 +37,11 @@ def is_auto_delete_active(db, cfg, library_id, series_id=None, movie_id=None):
 def get_enabled_since(db, cfg, library_id, series_id=None, movie_id=None):
     """UTC datetime from which watch events count for auto-deletion.
 
-    Explicit per-item (series/movie) opt-ins return None — the user deliberately
-    opted this item in, so all past watches are eligible with no timestamp gate.
-    Library-level enabled_at gates library opt-ins.
+    Always None: every opt-in (library, series or movie) counts past watches, so
+    there is no timestamp gate. Items already watched by all assigned users when
+    their library is opted in become eligible once the grace period has passed.
     """
-    if series_id:
-        row = db.execute(
-            "SELECT enabled FROM auto_delete_overrides WHERE scope='series' AND scope_id=?",
-            (str(series_id),)).fetchone()
-        if row and row["enabled"]:
-            return None
-    if movie_id:
-        row = db.execute(
-            "SELECT enabled FROM auto_delete_overrides WHERE scope='movie' AND scope_id=?",
-            (str(movie_id),)).fetchone()
-        if row and row["enabled"]:
-            return None
-    enabled_at_map = cfg.get("auto_delete_library_enabled_at") or {}
-    ts_str = enabled_at_map.get(str(library_id))
-    if ts_str:
-        try:
-            return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-        except Exception:
-            pass
-    return datetime.now(timezone.utc)
+    return None
 
 
 def latest_watch_ts(db, rating_key, item_type, providers, target_ids,
