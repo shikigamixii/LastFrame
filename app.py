@@ -190,7 +190,12 @@ PORT = int(os.environ.get("PORT", "8080"))
 
 # DB init + background sweeps at import time (works under gunicorn too).
 init_db()
-_auto_delete_sweep()
+# First auto-delete sweep runs on a timer thread, not inline: a sweep that has
+# many items to delete over the remote API would otherwise block the worker
+# from serving requests (and trip gunicorn's worker timeout) until it finished.
+_ad_t = threading.Timer(60, _auto_delete_sweep)
+_ad_t.daemon = True
+_ad_t.start()
 
 # Recently-added discovery sweep (multi-provider).
 RECENTLY_ADDED_SWEEP_INTERVAL = int(os.environ.get("RECENTLY_ADDED_SWEEP_INTERVAL", "1800"))
