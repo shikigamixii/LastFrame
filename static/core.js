@@ -31,10 +31,15 @@ function escAttr(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/<
 // value only when it is a plain ID (letters, digits, _ or -), otherwise "".
 function sanitizeIdForClient(v){v=String(v||'');return /^[A-Za-z0-9_-]+$/.test(v)?v:'';}
 function cleanName(s){return s.replace(/\s*\{[^}]+\}/g,'').trim();}
-function badge(u){
-  if(u.played)return'<div><span class="watch-badge watched">✓ '+esc(u.userName)+'</span><div class="watch-meta">'+u.playCount+'× played'+(u.lastPlayedDate?' · '+fmtD(u.lastPlayedDate):'')+'</div></div>';
-  if(u.playedPercentage>0)return'<div><span class="watch-badge partial">◐ '+esc(u.userName)+' '+u.playedPercentage+'%</span><div class="watch-meta">'+u.playCount+'× played'+(u.lastPlayedDate?' · '+fmtD(u.lastPlayedDate):'')+'</div></div>';
-  return'<div><span class="watch-badge unwatched">✗ '+esc(u.userName)+'</span></div>';
+// showName=false drops the username from the badge (for tables whose column
+// header already names the user); it stays available as a hover tooltip.
+function badge(u,showName=true){
+  const name=showName?' '+esc(u.userName):'';
+  const tip=showName?'':' title="'+escAttr(u.userName)+'"';
+  const meta='<div class="watch-meta">'+u.playCount+'× played'+(u.lastPlayedDate?' · '+fmtD(u.lastPlayedDate):'')+'</div>';
+  if(u.played)return'<div><span class="watch-badge watched"'+tip+'>✓'+name+'</span>'+meta+'</div>';
+  if(u.playedPercentage>0)return'<div><span class="watch-badge partial"'+tip+'>◐'+name+' '+u.playedPercentage+'%</span>'+meta+'</div>';
+  return'<div><span class="watch-badge unwatched"'+tip+'>✗'+name+'</span></div>';
 }
 function crumbs(c){
   const bc=$bc();
