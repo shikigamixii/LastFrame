@@ -601,7 +601,7 @@ async function refreshAfterAssign(){
     await renderItemOverlay();
     if(_currentLibId&&S.lib)fetchWatchSummary(_currentLibId,S.lib.type);
   } else {
-    route();
+    await route();
   }
 }
 
@@ -619,6 +619,12 @@ async function openItemOverlay(libId,type,itemId){
 function closeItemOverlay(){
   const ov=document.getElementById("itemDetailOverlay");
   if(ov)ov.classList.remove("active");
+  // Drop the hidden overlay's markup: it reuses ids like #assignUsers and
+  // #assignStatus, so leaving it behind makes the full series/movie page's
+  // Save read both sets of chips (duplicate users -> 500) and flash the
+  // "Saved!" status on the hidden copy.
+  const ct=document.getElementById("itemDetailContent");
+  if(ct)ct.innerHTML='';
   document.body.style.overflow='';
   _itemOverlayState=null;
 }
