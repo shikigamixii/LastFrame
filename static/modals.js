@@ -4,6 +4,48 @@ function openDeleteModal(msg,cb){$("#deleteModalBody").textContent=msg;_delCb=cb
 function closeDeleteModal(){$("#deleteModal").classList.remove("active");_delCb=null;}
 $("#deleteModalConfirm").addEventListener("click",async()=>{if(!_delCb)return;const b=$("#deleteModalConfirm");b.textContent="Deleting...";b.disabled=true;try{await _delCb();}finally{b.textContent="Delete";b.disabled=false;closeDeleteModal();}});
 
+// Mark unwatched modal
+let _unwatchState=null;
+function openUnwatchModal(msg,itemIds,done){
+  const ids=(itemIds||[]).map(sanitizeIdForClient).filter(Boolean);
+  if(!ids.length)return;
+  _unwatchState={itemIds:ids,done};
+  $("#unwatchModalBody").textContent=msg;
+  // Users are namespaced like items (px_/jf_), so only offer this server's users.
+  const pfx=ids[0].split("_")[0]+"_";
+  let h='';
+  for(const u of S.users){if(String(u.id).startsWith(pfx))h+=`<div class="assign-chip" data-uid="${escAttr(u.id)}" onclick="this.classList.toggle('on')">${esc(u.name)}</div>`;}
+  $("#unwatchUsers").innerHTML=h||'<span style="color:var(--text-muted);font-size:.85rem">No users found.</span>';
+  $("#unwatchError").textContent="";
+  $("#unwatchModal").classList.add("active");
+}
+function closeUnwatchModal(){$("#unwatchModal").classList.remove("active");_unwatchState=null;}
+async function confirmUnwatch(){
+  if(!_unwatchState)return;
+  const userIds=[];document.querySelectorAll("#unwatchUsers .assign-chip.on").forEach(c=>userIds.push(c.dataset.uid));
+  if(!userIds.length){$("#unwatchError").textContent="Please select at least one user.";return;}
+  const{itemIds,done}=_unwatchState;
+  const b=$("#unwatchConfirm");b.textContent="Working...";b.disabled=true;
+  let resp;
+  try{
+    const opts={method:"POST",headers:{"Content-Type":"application/json"}};
+    if(itemIds.length===1){opts.body=JSON.stringify({userIds});resp=await api("/api/unwatch/"+itemIds[0],opts);}
+    else{opts.body=JSON.stringify({itemIds,userIds});resp=await api("/api/unwatch-batch",opts);}
+  }catch(e){$("#unwatchError").textContent="Failed: "+e.message;return;}
+  finally{b.textContent="Mark Unwatched";b.disabled=false;}
+  closeUnwatchModal();
+  const notes=[],seen=new Set();
+  for(const i of (resp&&resp.issues)||[]){const line="• "+(i.userName||i.userId)+": "+i.message;if(!seen.has(line)){seen.add(line);notes.push(line);}}
+  const failed=(resp&&resp.failed)||[];
+  if(notes.length||failed.length){
+    let m="";
+    if(notes.length)m+="Cleared in LastFrame, but not unmarked on the media server for:\n"+notes.join("\n");
+    if(failed.length)m+=(m?"\n\n":"")+failed.length+" item(s) couldn't be loaded from the media server and were not changed.";
+    alert(m);
+  }
+  if(done)await done();
+}
+
 // Bulk assign modal
 let _bulkCallback=null;
 function openBulkAssignModal(items, callback){

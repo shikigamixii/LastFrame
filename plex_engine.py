@@ -25,13 +25,13 @@ from plex_api import (
     plex_accounts, plex_all_accounts, plex_owner_id, _local_account_id,
     plex_current_roster, plex_is_current_account,
     plex_sections, plex_genre_id, plex_tv_home_users, plex_tv_switch_token,
-    plex_tv_switch_token_diag, plex_refresh_access_tokens,
+    plex_tv_switch_token_diag, plex_refresh_access_tokens, plex_unscrobble,
     ts_to_iso, parse_plex_guids, get_item_providers as _raw_item_providers,
 )
 from assignments import get_assigned_ids, _load_assignment_maps, _resolve_target
 from webhook_state import (
     pwe_has_data, pwe_get_played, pwe_get_played_with_ts, pwe_get_played_by_ratingkey,
-    is_item_watched_pwe, get_last_played_pwe,
+    is_item_watched_pwe, get_last_played_pwe, pwe_reset_blocks,
 )
 import auto_delete_core as adc
 
@@ -786,6 +786,8 @@ def import_history(max_pages=None):
             account_ns = _ns(str(item["accountID"]))
             item_type = (item.get("type") or "").lower()
             iso_ts = datetime.fromtimestamp(item["viewedAt"], tz=timezone.utc).isoformat()
+            if pwe_reset_blocks(db, account_ns, item_type, providers, _ns(rk), iso_ts):
+                continue
             for ptype, pid in providers.items():
                 cur = db.execute(
                     "INSERT OR IGNORE INTO watch_events "
@@ -946,6 +948,8 @@ def run_managed_sweep():
                     if not last_viewed:
                         continue
                     iso_ts = datetime.fromtimestamp(last_viewed, tz=timezone.utc).isoformat()
+                    if pwe_reset_blocks(db, _ns(local_id), item_type, providers, _ns(rk), iso_ts):
+                        continue
                     for ptype, pid in providers.items():
                         cur = db.execute(
                             "INSERT OR IGNORE INTO watch_events "
@@ -961,6 +965,75 @@ def run_managed_sweep():
     finally:
         db.close()
     return report
+
+
+# ── mark unwatched ────────────────────────────────────────────────────
+def unwatch_items(raw):
+    """[(namespaced id, item_type, providers)] for every movie/episode a
+    reset of this item covers: the item itself, or every episode of a
+    show or season."""
+    mc = plex_get(f"/library/metadata/{raw}", {"includeGuids": 1})
+    item = (mc.get("Metadata") or [{}])[0]
+    ptype = (item.get("type") or "").lower()
+    if ptype in ("movie", "episode"):
+        return [(_ns(str(item.get("ratingKey") or raw)), ptype, parse_plex_guids(item.get("Guid") or []))]
+    if ptype == "show":
+        eps = plex_get(f"/library/metadata/{raw}/allLeaves", {"includeGuids": 1}).get("Metadata", [])
+    elif ptype == "season":
+        eps = plex_get(f"/library/metadata/{raw}/children", {"includeGuids": 1}).get("Metadata", [])
+    else:
+        return []
+    return [(_ns(str(e["ratingKey"])), "episode", parse_plex_guids(e.get("Guid") or []))
+            for e in eps if e.get("type") == "episode" and e.get("ratingKey")]
+
+
+def unwatch_accounts():
+    """{namespaced account id: name} for every account a reset may target."""
+    return {a["id"]: a["name"] for a in all_accounts()}
+
+
+def _unmark_token(account_id, name, ctx):
+    """(token, reason) for unmarking on Plex as this account. Only the
+    server owner and unprotected Plex Home users can be acted for; ctx caches
+    lookups across the accounts of one request."""
+    if "owner" not in ctx:
+        ctx["owner"] = plex_owner_id()
+    if ctx["owner"] and idutil.raw_of(account_id) == str(ctx["owner"]):
+        return get_plex_token(), ""
+    if "home" not in ctx:
+        try:
+            ctx["home"] = {(u.get("title") or "").strip().lower(): u for u in plex_tv_home_users()}
+        except Exception as e:
+            logger.warning(f"Plex Home users lookup failed: {e}")
+            ctx["home"] = None
+    if ctx["home"] is None:
+        return None, "Couldn't reach plex.tv to look up Plex Home users"
+    hu = ctx["home"].get((name or "").strip().lower())
+    if not hu or hu.get("admin"):
+        return None, "Plex only allows this for the server owner and Plex Home users"
+    if hu.get("protected"):
+        return None, "PIN-protected Plex Home users can't be unmarked from LastFrame"
+    if not ctx.get("refreshed"):
+        plex_refresh_access_tokens()
+        ctx["refreshed"] = True
+    token = _get_managed_user_token(hu.get("id"))
+    if not token:
+        return None, "Couldn't get a Plex token for this user"
+    return token, ""
+
+
+def unmark_on_server(raw, account_id, ctx):
+    """Mark the item unwatched in Plex for one account. Returns
+    (status, message): status is 'ok', 'failed' or 'unsupported'."""
+    token, reason = _unmark_token(account_id, ctx.get("names", {}).get(account_id, ""), ctx)
+    if not token:
+        return "unsupported", reason
+    try:
+        plex_unscrobble(raw, token)
+        return "ok", ""
+    except Exception as e:
+        logger.warning(f"Plex unmark failed for item {raw} account {account_id}: {e}")
+        return "failed", "Plex didn't accept the request"
 
 
 # ── webhook ───────────────────────────────────────────────────────────

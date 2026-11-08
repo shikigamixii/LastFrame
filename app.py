@@ -34,6 +34,7 @@ from assignments import (
     set_assignment_by_item_id, delete_assignment_by_item_id, get_assigned_ids,
 )
 from auto_delete import _run_sweep, _auto_delete_sweep
+from webhook_state import pwe_clear_item
 import recently_added
 
 app = Flask(__name__)
@@ -1264,6 +1265,71 @@ def api_delete_batch():
                 app.logger.exception(f"Failed to delete batch item {nsid} from {request.remote_addr}")
                 failed.append({"id": nsid, "error": "Failed to delete item"})
     return jsonify({"success": True, "deleted": deleted, "failed": failed})
+
+
+# ── Routes: mark unwatched ────────────────────────────────────────────
+def _unwatch(nsids, user_ids):
+    """Reset watch state for the given items (movie, episode, season or
+    series) and users. Each item is first marked unwatched on its media
+    server; LastFrame's own record is cleared either way, and anything the
+    server couldn't do is reported back as an issue."""
+    if not isinstance(user_ids, list) or not user_ids:
+        return jsonify({"success": False, "error": "Select at least one user"}), 400
+    user_ids = [str(u) for u in user_ids]
+    groups = _group_ids([str(i) for i in nsids])
+    reset_at = datetime.now(timezone.utc).isoformat()
+    cleared, issues, failed, matched_users = 0, [], [], False
+    for engine, raws in groups.values():
+        names = engine.unwatch_accounts()
+        targets = [u for u in dict.fromkeys(user_ids) if u in names]
+        if not targets:
+            continue
+        matched_users = True
+        ctx = {"names": names}
+        for raw in raws:
+            nsid = idutil.make_id(engine.KEY, raw)
+            try:
+                items = engine.unwatch_items(raw)
+            except Exception:
+                app.logger.exception(f"Mark unwatched: could not load item {nsid}")
+                failed.append({"id": nsid, "error": "Couldn't load this item from the media server"})
+                continue
+            for aid in targets:
+                status, message = engine.unmark_on_server(raw, aid, ctx)
+                if status != "ok":
+                    issues.append({"itemId": nsid, "userId": aid, "userName": names.get(aid, ""),
+                                   "status": status, "message": message})
+            db = get_db()
+            try:
+                for aid in targets:
+                    for item_nsid, item_type, item_providers in items:
+                        cleared += pwe_clear_item(db, aid, item_type, item_providers, item_nsid, reset_at)
+                db.commit()
+            finally:
+                db.close()
+            app.logger.info(f"Marked {nsid} unwatched for {', '.join(targets)} from {request.remote_addr}")
+    if not matched_users:
+        return jsonify({"success": False, "error": "None of the selected users belong to this server"}), 400
+    return jsonify({"success": True, "cleared": cleared, "issues": issues, "failed": failed})
+
+
+@app.route("/api/unwatch/<item_id>", methods=["POST"])
+@limiter.limit("30 per minute")
+@login_required_api
+def api_unwatch_item(item_id):
+    _resolve(item_id)
+    return _unwatch([item_id], (request.get_json(silent=True) or {}).get("userIds"))
+
+
+@app.route("/api/unwatch-batch", methods=["POST"])
+@limiter.limit("10 per minute")
+@login_required_api
+def api_unwatch_batch():
+    body = request.get_json(silent=True) or {}
+    ids = body.get("itemIds")
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"success": False, "error": "No items selected"}), 400
+    return _unwatch(ids, body.get("userIds"))
 
 
 @app.route("/api/check-season-empty/<series_id>/<season_id>")

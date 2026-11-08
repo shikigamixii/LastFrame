@@ -35,6 +35,18 @@ def init_db():
         db.execute("ALTER TABLE watch_events ADD COLUMN rating_key TEXT NOT NULL DEFAULT ''")
     except Exception:
         pass
+    # Manual "mark as unwatched" resets. One row per key the reset cleared
+    # (same keys as watch_events). Imports from server history (Plex history
+    # poll, Plex managed sweep, Jellyfin backfill) skip any play at or before
+    # reset_at, so an old play the server still remembers can't undo a reset.
+    # Plays after the reset count as normal.
+    db.execute("""CREATE TABLE IF NOT EXISTS watch_resets (
+        account_id    TEXT NOT NULL,
+        provider_type TEXT NOT NULL,
+        provider_id   TEXT NOT NULL,
+        item_type     TEXT NOT NULL,
+        reset_at      TEXT NOT NULL,
+        PRIMARY KEY (account_id, provider_type, provider_id, item_type))""")
     db.execute("""CREATE TABLE IF NOT EXISTS auto_delete_overrides (
         scope      TEXT NOT NULL,
         scope_id   TEXT NOT NULL,

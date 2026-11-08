@@ -153,6 +153,10 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:-apple-s
 .btn-delete{background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:6px;padding:.3rem .6rem;font-size:.75rem;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap}
 .btn-delete:hover{background:var(--red);color:#fff}
 .btn-delete:disabled{opacity:.3;cursor:not-allowed}
+.btn-unwatch{background:var(--bg-card);color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:.3rem .6rem;font-size:.75rem;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap}
+.btn-unwatch:hover{background:var(--accent);color:#fff}
+.btn-unwatch:disabled{opacity:.3;cursor:not-allowed}
+.btn-unwatch.lg{border-radius:8px;padding:.5rem 1rem;font-size:.85rem}
 .btn-delete-bulk{background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:8px;padding:.5rem 1rem;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s}
 .btn-delete-bulk:hover{background:var(--red);color:#fff}
 .delete-selected{background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:6px;padding:.3rem .7rem;font-size:.8rem;cursor:pointer;transition:all .2s}
@@ -315,7 +319,7 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:-apple-s
   .watched-toggle-btn{font-size:.73rem}
 }
 @media(hover:none) and (pointer:coarse){
-  .btn-delete,.btn-cancel,.btn-confirm-delete,.btn-delete-bulk,.selection-toolbar button,.delete-selected,.assign-actions button,.pagination button,.btn-settings,.sidebar-footer-btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+  .btn-delete,.btn-unwatch,.btn-cancel,.btn-confirm-delete,.btn-delete-bulk,.selection-toolbar button,.delete-selected,.assign-actions button,.pagination button,.btn-settings,.sidebar-footer-btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
   .assign-chip,.genre-chip,.watched-toggle-btn{min-height:40px;padding:.4rem 1rem}
   .ep-checkbox,.item-card .checkbox-overlay input{width:22px;height:22px}
   input[type="text"],input[type="password"]{font-size:16px}

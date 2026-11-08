@@ -76,3 +76,81 @@ def get_last_played_pwe(providers, item_type, account_id, played_ts):
         if t and (ts is None or t > ts):
             ts = t
     return ts
+
+
+# ── manual watch resets ───────────────────────────────────────────────
+def _parse_ts(value):
+    """ISO timestamp -> aware UTC datetime, or None when it can't be read."""
+    from datetime import datetime, timezone
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _item_keys(providers, rating_key):
+    """(provider_type, provider_id) keys an item's watch_events rows can use."""
+    keys = [(pt.lower(), str(pid)) for pt, pid in (providers or {}).items() if pid]
+    if rating_key:
+        keys.append(("ratingkey", str(rating_key)))
+    return keys
+
+
+def pwe_clear_item(db, account_id, item_type, providers, rating_key, reset_at=None):
+    """Remove one account's play rows for one item. Returns rows deleted.
+
+    Matches the item's provider ids and its namespaced rating key, the same
+    keys the watched checks use. With reset_at, also records a reset for each
+    key so history imports skip plays from before it (see pwe_reset_blocks).
+    Does not commit.
+    """
+    keys = _item_keys(providers, rating_key)
+    if not account_id or not item_type or not keys:
+        return 0
+    deleted = 0
+    for ptype, pid in keys:
+        if ptype != "ratingkey":
+            cur = db.execute(
+                "DELETE FROM watch_events WHERE account_id=? AND item_type=? AND provider_type=? AND provider_id=?",
+                (account_id, item_type, ptype, pid))
+            deleted += cur.rowcount
+    if rating_key:
+        cur = db.execute(
+            "DELETE FROM watch_events WHERE account_id=? AND item_type=? AND rating_key=?",
+            (account_id, item_type, str(rating_key)))
+        deleted += cur.rowcount
+    if reset_at:
+        for ptype, pid in keys:
+            db.execute(
+                "INSERT INTO watch_resets (account_id, provider_type, provider_id, item_type, reset_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(account_id, provider_type, provider_id, item_type) DO UPDATE SET reset_at=excluded.reset_at",
+                (account_id, ptype, pid, item_type, reset_at))
+    return deleted
+
+
+def pwe_reset_blocks(db, account_id, item_type, providers, rating_key, played_at):
+    """True when the item was reset for this account at or after played_at,
+    so an imported play from server history must not be stored again."""
+    keys = _item_keys(providers, rating_key)
+    if not account_id or not keys:
+        return False
+    latest = None
+    for ptype, pid in keys:
+        row = db.execute(
+            "SELECT reset_at FROM watch_resets WHERE account_id=? AND provider_type=? AND provider_id=? AND item_type=?",
+            (account_id, ptype, pid, item_type)).fetchone()
+        if row:
+            ts = _parse_ts(row["reset_at"])
+            if ts and (latest is None or ts > latest):
+                latest = ts
+    if latest is None:
+        return False
+    played = _parse_ts(played_at)
+    # A play with no readable time can't be shown to be newer than the reset.
+    return played is None or played <= latest
