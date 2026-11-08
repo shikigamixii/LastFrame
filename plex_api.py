@@ -226,6 +226,22 @@ def plex_delete(path):
     r.raise_for_status()
     return r
 
+def plex_unscrobble(rating_key, token):
+    """Mark an item unwatched for the account that owns `token`. On a show or
+    season Plex unmarks every episode in it."""
+    r = _session.get(f"{get_plex_url()}/:/unscrobble", headers=_pms_headers(token),
+                     params={"key": rating_key, "identifier": "com.plexapp.plugins.library"}, timeout=30)
+    r.raise_for_status()
+    return r
+
+def plex_scrobble(rating_key, token):
+    """Mark an item watched for the account that owns `token`. On a show or
+    season Plex marks every episode in it."""
+    r = _session.get(f"{get_plex_url()}/:/scrobble", headers=_pms_headers(token),
+                     params={"key": rating_key, "identifier": "com.plexapp.plugins.library"}, timeout=30)
+    r.raise_for_status()
+    return r
+
 def plex_get_raw(path, params=None):
     p = dict(params) if params else {}
     r = _session.get(f"{get_plex_url()}{path}", headers=_pms_headers(get_plex_token(), base={}),

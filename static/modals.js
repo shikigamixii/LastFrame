@@ -4,6 +4,75 @@ function openDeleteModal(msg,cb){$("#deleteModalBody").textContent=msg;_delCb=cb
 function closeDeleteModal(){$("#deleteModal").classList.remove("active");_delCb=null;}
 $("#deleteModalConfirm").addEventListener("click",async()=>{if(!_delCb)return;const b=$("#deleteModalConfirm");b.textContent="Deleting...";b.disabled=true;try{await _delCb();}finally{b.textContent="Delete";b.disabled=false;closeDeleteModal();}});
 
+// Mark watched / unwatched modal
+let _watchState=null;
+const _WATCH_MODES={
+  unwatch:{title:"Mark as Unwatched",button:"Mark Unwatched",single:"/api/unwatch/",batch:"/api/unwatch-batch",
+    note:"Clears LastFrame's watch record for the selected users and unmarks it on the media server where the server allows it. Nothing is deleted.",
+    issue:"Cleared in LastFrame, but not unmarked on the media server for:"},
+  watched:{title:"Mark as Watched",button:"Mark Watched",single:"/api/mark-watched/",batch:"/api/mark-watched-batch",
+    note:"Records a watch in LastFrame for the selected users (dated now, unless they already watched it) and marks it watched on the media server where the server allows it.",
+    issue:"Marked in LastFrame, but not marked watched on the media server for:"}
+};
+// ad: {scope:'movie'|'series', id} — the auto-delete setting that covers the item.
+function openWatchModal(mode,msg,itemIds,done,ad){
+  const cfg=_WATCH_MODES[mode];
+  const ids=(itemIds||[]).map(sanitizeIdForClient).filter(Boolean);
+  if(!cfg||!ids.length)return;
+  const token={};
+  _watchState={mode,itemIds:ids,done,token};
+  $("#watchModalTitle").textContent=cfg.title;
+  $("#watchModalNote").textContent=cfg.note;
+  $("#watchConfirm").textContent=cfg.button;
+  $("#watchModalBody").textContent=msg;
+  // Users are namespaced like items (px_/jf_), so only offer this server's users.
+  const pfx=ids[0].split("_")[0]+"_";
+  let h='';
+  for(const u of S.users){if(String(u.id).startsWith(pfx))h+=`<div class="assign-chip" data-uid="${escAttr(u.id)}" onclick="this.classList.toggle('on')">${esc(u.name)}</div>`;}
+  $("#watchUsers").innerHTML=h||'<span style="color:var(--text-muted);font-size:.85rem">No users found.</span>';
+  $("#watchError").textContent="";
+  const warn=$("#watchAdWarning");warn.style.display="none";warn.textContent="";
+  $("#watchModal").classList.add("active");
+  const adId=ad&&sanitizeIdForClient(ad.id);
+  if(mode==="watched"&&adId){
+    api("/api/auto-delete/"+(ad.scope==="movie"?"movie":"series")+"/"+adId).then(st=>{
+      if(!_watchState||_watchState.token!==token||!st||!st.global_enabled||!st.effective)return;
+      const g=st.grace_days||0;
+      const when=g===0?"right away":"after the "+g+"-day grace period";
+      warn.textContent="Auto-delete is on for this "+(ad.scope==="movie"?"movie":"show")+". Once every assigned user has watched an item, it will be deleted "+when+".";
+      warn.style.display="";
+    }).catch(()=>{});
+  }
+}
+function openUnwatchModal(msg,itemIds,done,ad){openWatchModal("unwatch",msg,itemIds,done,ad);}
+function openMarkWatchedModal(msg,itemIds,done,ad){openWatchModal("watched",msg,itemIds,done,ad);}
+function closeWatchModal(){$("#watchModal").classList.remove("active");_watchState=null;}
+async function confirmWatch(){
+  if(!_watchState)return;
+  const userIds=[];document.querySelectorAll("#watchUsers .assign-chip.on").forEach(c=>userIds.push(c.dataset.uid));
+  if(!userIds.length){$("#watchError").textContent="Please select at least one user.";return;}
+  const{mode,itemIds,done}=_watchState,cfg=_WATCH_MODES[mode];
+  const b=$("#watchConfirm");b.textContent="Working...";b.disabled=true;
+  let resp;
+  try{
+    const opts={method:"POST",headers:{"Content-Type":"application/json"}};
+    if(itemIds.length===1){opts.body=JSON.stringify({userIds});resp=await api(cfg.single+itemIds[0],opts);}
+    else{opts.body=JSON.stringify({itemIds,userIds});resp=await api(cfg.batch,opts);}
+  }catch(e){$("#watchError").textContent="Failed: "+e.message;return;}
+  finally{b.textContent=cfg.button;b.disabled=false;}
+  closeWatchModal();
+  const notes=[],seen=new Set();
+  for(const i of (resp&&resp.issues)||[]){const line="• "+(i.userName||i.userId)+": "+i.message;if(!seen.has(line)){seen.add(line);notes.push(line);}}
+  const failed=(resp&&resp.failed)||[];
+  if(notes.length||failed.length){
+    let m="";
+    if(notes.length)m+=cfg.issue+"\n"+notes.join("\n");
+    if(failed.length)m+=(m?"\n\n":"")+failed.length+" item(s) couldn't be loaded from the media server and were not changed.";
+    alert(m);
+  }
+  if(done)await done();
+}
+
 // Bulk assign modal
 let _bulkCallback=null;
 function openBulkAssignModal(items, callback){

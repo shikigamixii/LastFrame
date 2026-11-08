@@ -18,14 +18,14 @@ from config_store import load_config, PAGE_SIZE
 from db import get_db
 from jellyfin_api import (
     get_jellyfin_url, get_jellyfin_api_key, get_webhook_secret, _jf_headers,
-    jellyfin_get, jellyfin_get_item, jellyfin_delete, jellyfin_users,
+    jellyfin_get, jellyfin_get_item, jellyfin_delete, jellyfin_mark_unplayed, jellyfin_mark_played, jellyfin_users,
     jellyfin_all_users, jellyfin_admin_id, jellyfin_libraries, jellyfin_items,
     ts_to_iso, parse_jellyfin_providers, get_item_providers as _raw_item_providers,
 )
 from assignments import get_assigned_ids, _load_assignment_maps, _resolve_target
 from webhook_state import (
     pwe_has_data, pwe_get_played, pwe_get_played_with_ts, pwe_get_played_by_ratingkey,
-    is_item_watched_pwe, get_last_played_pwe,
+    is_item_watched_pwe, get_last_played_pwe, pwe_clear_item, pwe_reset_blocks,
 )
 import auto_delete_core as adc
 
@@ -742,6 +742,51 @@ def activity():
     return out
 
 
+# ── mark unwatched ────────────────────────────────────────────────────
+def unwatch_items(raw):
+    """[(namespaced id, item_type, providers)] for every movie/episode a
+    reset of this item covers: the item itself, or every episode of a
+    series or season."""
+    item = jellyfin_get_item(raw, {"fields": "ProviderIds"})
+    jf_type = item.get("Type", "")
+    if jf_type in ("Movie", "Episode"):
+        return [(_ns(str(item.get("Id") or raw)), jf_type.lower(),
+                 parse_jellyfin_providers(item.get("ProviderIds") or {}))]
+    if jf_type in ("Series", "Season"):
+        eps = jellyfin_items({"ParentId": raw, "Recursive": "true",
+                              "IncludeItemTypes": "Episode", "fields": "ProviderIds"})
+        return [(_ns(str(e["Id"])), "episode", parse_jellyfin_providers(e.get("ProviderIds") or {}))
+                for e in eps if e.get("Id")]
+    return []
+
+
+def unwatch_accounts():
+    """{namespaced account id: name} for every account a reset may target."""
+    return {a["id"]: a["name"] for a in all_accounts()}
+
+
+def unmark_on_server(raw, account_id, ctx):
+    """Mark the item unplayed in Jellyfin for one account.
+    Returns (status, message): status is 'ok' or 'failed'."""
+    try:
+        jellyfin_mark_unplayed(raw, idutil.raw_of(account_id))
+        return "ok", ""
+    except Exception as e:
+        logger.warning(f"Jellyfin unmark failed for item {raw} account {account_id}: {e}")
+        return "failed", "Jellyfin didn't accept the request"
+
+
+def mark_on_server(raw, account_id, ctx):
+    """Mark the item played in Jellyfin for one account.
+    Returns (status, message): status is 'ok' or 'failed'."""
+    try:
+        jellyfin_mark_played(raw, idutil.raw_of(account_id))
+        return "ok", ""
+    except Exception as e:
+        logger.warning(f"Jellyfin mark played failed for item {raw} account {account_id}: {e}")
+        return "failed", "Jellyfin didn't accept the request"
+
+
 # ── backfill ──────────────────────────────────────────────────────────
 def backfill():
     accts = jellyfin_all_users()
@@ -772,6 +817,8 @@ def backfill():
                 ud = item.get("UserData") or {}
                 iso_ts = ud.get("LastPlayedDate") or datetime.now(timezone.utc).isoformat()
                 total_history += 1
+                if pwe_reset_blocks(db, uid_ns, item_type, providers, _ns(rk), iso_ts):
+                    continue
                 for ptype, pid in providers.items():
                     cur = db.execute(
                         "INSERT OR IGNORE INTO watch_events "
@@ -786,6 +833,33 @@ def backfill():
 
 
 # ── webhook ───────────────────────────────────────────────────────────
+def _clear_unplayed(data):
+    """UserDataSaved with Played=false: the item was marked unplayed in
+    Jellyfin (playback never sets Played back to false), so remove the
+    user's stored play for it. Saves for never-played items match no rows."""
+    account_raw = data.get("UserId")
+    item_type = {"movie": "movie", "episode": "episode"}.get((data.get("ItemType") or "").lower())
+    if not account_raw or not item_type:
+        return {"ok": True, "skipped": "user_data_saved_not_played"}, 200
+    providers_raw = {}
+    for field, key in (("Provider_tmdb", "Tmdb"), ("Provider_tvdb", "Tvdb"), ("Provider_imdb", "Imdb")):
+        if data.get(field):
+            providers_raw[key] = str(data[field])
+    providers = parse_jellyfin_providers(providers_raw)
+    rk_raw = str(data.get("ItemId") or "")
+    rk_ns = _ns(rk_raw) if rk_raw else ""
+    account_ns = _ns(str(account_raw))
+    db = get_db()
+    try:
+        cleared = pwe_clear_item(db, account_ns, item_type, providers, rk_ns)
+        db.commit()
+    finally:
+        db.close()
+    if cleared:
+        logger.info(f"Jellyfin webhook: unplayed account={account_ns} type={item_type} item_id={rk_raw} cleared={cleared}")
+    return {"ok": True, "cleared": cleared}, 200
+
+
 def store_webhook(request, cfg):
     """Full Jellyfin webhook handler. Returns (json_dict, status_code)."""
     data = request.get_json(force=True, silent=True) or {}
@@ -798,7 +872,8 @@ def store_webhook(request, cfg):
         if isinstance(played_field, str):
             played_field = played_field.strip().lower() == "true"
         if not played_field:
-            return {"ok": True, "skipped": "user_data_saved_not_played"}, 200
+            # Unmarked in Jellyfin: drop this user's stored play for the item.
+            return _clear_unplayed(data)
     else:
         return {"ok": True, "skipped": notification_type}, 200
 

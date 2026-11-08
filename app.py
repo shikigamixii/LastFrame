@@ -34,6 +34,7 @@ from assignments import (
     set_assignment_by_item_id, delete_assignment_by_item_id, get_assigned_ids,
 )
 from auto_delete import _run_sweep, _auto_delete_sweep
+from webhook_state import pwe_clear_item, pwe_mark_item
 import recently_added
 
 app = Flask(__name__)
@@ -1264,6 +1265,100 @@ def api_delete_batch():
                 app.logger.exception(f"Failed to delete batch item {nsid} from {request.remote_addr}")
                 failed.append({"id": nsid, "error": "Failed to delete item"})
     return jsonify({"success": True, "deleted": deleted, "failed": failed})
+
+
+# ── Routes: mark watched / unwatched ──────────────────────────────────
+def _set_watched(nsids, user_ids, watched):
+    """Mark the given items (movie, episode, season or series) watched or
+    unwatched for the given users. Each item is first changed on its media
+    server; LastFrame's own record is updated either way, and anything the
+    server couldn't do is reported back as an issue."""
+    if not isinstance(user_ids, list) or not user_ids:
+        return jsonify({"success": False, "error": "Select at least one user"}), 400
+    user_ids = [str(u) for u in user_ids]
+    groups = _group_ids([str(i) for i in nsids])
+    now = datetime.now(timezone.utc).isoformat()
+    changed, issues, failed, matched_users = 0, [], [], False
+    for engine, raws in groups.values():
+        names = engine.unwatch_accounts()
+        targets = [u for u in dict.fromkeys(user_ids) if u in names]
+        if not targets:
+            continue
+        matched_users = True
+        ctx = {"names": names}
+        on_server = engine.mark_on_server if watched else engine.unmark_on_server
+        for raw in raws:
+            nsid = idutil.make_id(engine.KEY, raw)
+            try:
+                items = engine.unwatch_items(raw)
+            except Exception:
+                app.logger.exception(f"Mark {'watched' if watched else 'unwatched'}: could not load item {nsid}")
+                failed.append({"id": nsid, "error": "Couldn't load this item from the media server"})
+                continue
+            for aid in targets:
+                status, message = on_server(raw, aid, ctx)
+                if status != "ok":
+                    issues.append({"itemId": nsid, "userId": aid, "userName": names.get(aid, ""),
+                                   "status": status, "message": message})
+            db = get_db()
+            try:
+                for aid in targets:
+                    for item_nsid, item_type, item_providers in items:
+                        if watched:
+                            changed += pwe_mark_item(db, aid, item_type, item_providers, item_nsid, now)
+                        else:
+                            changed += pwe_clear_item(db, aid, item_type, item_providers, item_nsid, now)
+                db.commit()
+            finally:
+                db.close()
+            app.logger.info(f"Marked {nsid} {'watched' if watched else 'unwatched'} for "
+                            f"{', '.join(targets)} from {request.remote_addr}")
+    if not matched_users:
+        return jsonify({"success": False, "error": "None of the selected users belong to this server"}), 400
+    return jsonify({"success": True, ("added" if watched else "cleared"): changed,
+                    "issues": issues, "failed": failed})
+
+
+def _batch_ids():
+    body = request.get_json(silent=True) or {}
+    ids = body.get("itemIds")
+    return (ids if isinstance(ids, list) and ids else None), body.get("userIds")
+
+
+@app.route("/api/unwatch/<item_id>", methods=["POST"])
+@limiter.limit("30 per minute")
+@login_required_api
+def api_unwatch_item(item_id):
+    _resolve(item_id)
+    return _set_watched([item_id], (request.get_json(silent=True) or {}).get("userIds"), False)
+
+
+@app.route("/api/unwatch-batch", methods=["POST"])
+@limiter.limit("10 per minute")
+@login_required_api
+def api_unwatch_batch():
+    ids, user_ids = _batch_ids()
+    if not ids:
+        return jsonify({"success": False, "error": "No items selected"}), 400
+    return _set_watched(ids, user_ids, False)
+
+
+@app.route("/api/mark-watched/<item_id>", methods=["POST"])
+@limiter.limit("30 per minute")
+@login_required_api
+def api_mark_watched_item(item_id):
+    _resolve(item_id)
+    return _set_watched([item_id], (request.get_json(silent=True) or {}).get("userIds"), True)
+
+
+@app.route("/api/mark-watched-batch", methods=["POST"])
+@limiter.limit("10 per minute")
+@login_required_api
+def api_mark_watched_batch():
+    ids, user_ids = _batch_ids()
+    if not ids:
+        return jsonify({"success": False, "error": "No items selected"}), 400
+    return _set_watched(ids, user_ids, True)
 
 
 @app.route("/api/check-season-empty/<series_id>/<season_id>")
