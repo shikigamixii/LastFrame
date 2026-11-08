@@ -18,7 +18,7 @@ from config_store import load_config, PAGE_SIZE
 from db import get_db
 from jellyfin_api import (
     get_jellyfin_url, get_jellyfin_api_key, get_webhook_secret, _jf_headers,
-    jellyfin_get, jellyfin_get_item, jellyfin_delete, jellyfin_mark_unplayed, jellyfin_users,
+    jellyfin_get, jellyfin_get_item, jellyfin_delete, jellyfin_mark_unplayed, jellyfin_mark_played, jellyfin_users,
     jellyfin_all_users, jellyfin_admin_id, jellyfin_libraries, jellyfin_items,
     ts_to_iso, parse_jellyfin_providers, get_item_providers as _raw_item_providers,
 )
@@ -773,6 +773,17 @@ def unmark_on_server(raw, account_id, ctx):
         return "ok", ""
     except Exception as e:
         logger.warning(f"Jellyfin unmark failed for item {raw} account {account_id}: {e}")
+        return "failed", "Jellyfin didn't accept the request"
+
+
+def mark_on_server(raw, account_id, ctx):
+    """Mark the item played in Jellyfin for one account.
+    Returns (status, message): status is 'ok' or 'failed'."""
+    try:
+        jellyfin_mark_played(raw, idutil.raw_of(account_id))
+        return "ok", ""
+    except Exception as e:
+        logger.warning(f"Jellyfin mark played failed for item {raw} account {account_id}: {e}")
         return "failed", "Jellyfin didn't accept the request"
 
 

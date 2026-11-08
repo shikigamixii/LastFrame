@@ -60,17 +60,18 @@
 <!-- Delete Modal -->
 <div class="modal-overlay" id="deleteModal"><div class="modal"><h3>Confirm Delete</h3><p id="deleteModalBody" style="white-space:pre-line"></p><div class="warning">This will permanently delete the file(s) from disk. If you are seeding these files, this will break the torrent.</div><div class="modal-actions"><button class="btn-cancel" onclick="closeDeleteModal()">Cancel</button><button class="btn-confirm-delete" id="deleteModalConfirm">Delete</button></div></div></div>
 
-<!-- Mark Unwatched Modal -->
-<div class="modal-overlay" id="unwatchModal">
+<!-- Mark Watched / Unwatched Modal -->
+<div class="modal-overlay" id="watchModal">
   <div class="modal" style="max-width:450px">
-    <h3 style="color:var(--accent)">Mark as Unwatched</h3>
-    <p id="unwatchModalBody" style="white-space:pre-line;margin-top:.75rem"></p>
-    <div id="unwatchUsers" style="display:flex; flex-wrap:wrap; gap:0.5rem; margin:1rem 0;"></div>
-    <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.75rem">Clears LastFrame's watch record for the selected users and unmarks it on the media server where the server allows it. Nothing is deleted.</p>
-    <div id="unwatchError" style="color:var(--red); font-size:0.8rem; margin-bottom:1rem"></div>
+    <h3 style="color:var(--accent)" id="watchModalTitle">Mark as Unwatched</h3>
+    <p id="watchModalBody" style="white-space:pre-line;margin-top:.75rem"></p>
+    <div id="watchUsers" style="display:flex; flex-wrap:wrap; gap:0.5rem; margin:1rem 0;"></div>
+    <p id="watchModalNote" style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.75rem"></p>
+    <div class="warning" id="watchAdWarning" style="display:none"></div>
+    <div id="watchError" style="color:var(--red); font-size:0.8rem; margin-bottom:1rem"></div>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeUnwatchModal()">Cancel</button>
-      <button class="btn-confirm-delete" style="background:var(--accent)" id="unwatchConfirm" onclick="confirmUnwatch()">Mark Unwatched</button>
+      <button class="btn-cancel" onclick="closeWatchModal()">Cancel</button>
+      <button class="btn-confirm-delete" style="background:var(--accent)" id="watchConfirm" onclick="confirmWatch()">Mark Unwatched</button>
     </div>
   </div>
 </div>

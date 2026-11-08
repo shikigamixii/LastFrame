@@ -134,6 +134,34 @@ def pwe_clear_item(db, account_id, item_type, providers, rating_key, reset_at=No
     return deleted
 
 
+def pwe_mark_item(db, account_id, item_type, providers, rating_key, played_at):
+    """Store a play for one account and item (manual "mark as watched").
+    Returns rows added.
+
+    Writes the same rows a play webhook would. A user who already has a play
+    keeps it, along with its original date, so an auto-delete grace period
+    already running isn't restarted. Any earlier reset of the item is
+    dropped. Does not commit.
+    """
+    pkeys = [(pt.lower(), str(pid)) for pt, pid in (providers or {}).items() if pid]
+    if not pkeys and rating_key:
+        pkeys = [("ratingkey", str(rating_key))]
+    if not account_id or not item_type or not pkeys:
+        return 0
+    added = 0
+    for ptype, pid in pkeys:
+        cur = db.execute(
+            "INSERT INTO watch_events (account_id, provider_type, provider_id, item_type, event_type, updated_at, rating_key) "
+            "VALUES (?, ?, ?, ?, 'play', ?, ?) "
+            "ON CONFLICT(account_id, provider_type, provider_id, item_type) DO NOTHING",
+            (account_id, ptype, pid, item_type, played_at, str(rating_key or "")))
+        added += cur.rowcount
+    for ptype, pid in _item_keys(providers, rating_key):
+        db.execute("DELETE FROM watch_resets WHERE account_id=? AND provider_type=? AND provider_id=? AND item_type=?",
+                   (account_id, ptype, pid, item_type))
+    return added
+
+
 def pwe_reset_blocks(db, account_id, item_type, providers, rating_key, played_at):
     """True when the item was reset for this account at or after played_at,
     so an imported play from server history must not be stored again."""

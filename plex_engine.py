@@ -25,7 +25,7 @@ from plex_api import (
     plex_accounts, plex_all_accounts, plex_owner_id, _local_account_id,
     plex_current_roster, plex_is_current_account,
     plex_sections, plex_genre_id, plex_tv_home_users, plex_tv_switch_token,
-    plex_tv_switch_token_diag, plex_refresh_access_tokens, plex_unscrobble,
+    plex_tv_switch_token_diag, plex_refresh_access_tokens, plex_unscrobble, plex_scrobble,
     ts_to_iso, parse_plex_guids, get_item_providers as _raw_item_providers,
 )
 from assignments import get_assigned_ids, _load_assignment_maps, _resolve_target
@@ -993,7 +993,7 @@ def unwatch_accounts():
 
 
 def _unmark_token(account_id, name, ctx):
-    """(token, reason) for unmarking on Plex as this account. Only the
+    """(token, reason) for changing watch state on Plex as this account. Only the
     server owner and unprotected Plex Home users can be acted for; ctx caches
     lookups across the accounts of one request."""
     if "owner" not in ctx:
@@ -1012,7 +1012,7 @@ def _unmark_token(account_id, name, ctx):
     if not hu or hu.get("admin"):
         return None, "Plex only allows this for the server owner and Plex Home users"
     if hu.get("protected"):
-        return None, "PIN-protected Plex Home users can't be unmarked from LastFrame"
+        return None, "PIN-protected Plex Home users can't be changed from LastFrame"
     if not ctx.get("refreshed"):
         plex_refresh_access_tokens()
         ctx["refreshed"] = True
@@ -1033,6 +1033,20 @@ def unmark_on_server(raw, account_id, ctx):
         return "ok", ""
     except Exception as e:
         logger.warning(f"Plex unmark failed for item {raw} account {account_id}: {e}")
+        return "failed", "Plex didn't accept the request"
+
+
+def mark_on_server(raw, account_id, ctx):
+    """Mark the item watched in Plex for one account. Returns
+    (status, message): status is 'ok', 'failed' or 'unsupported'."""
+    token, reason = _unmark_token(account_id, ctx.get("names", {}).get(account_id, ""), ctx)
+    if not token:
+        return "unsupported", reason
+    try:
+        plex_scrobble(raw, token)
+        return "ok", ""
+    except Exception as e:
+        logger.warning(f"Plex mark watched failed for item {raw} account {account_id}: {e}")
         return "failed", "Plex didn't accept the request"
 
 

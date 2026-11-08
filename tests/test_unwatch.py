@@ -1,6 +1,7 @@
-"""Tests for "mark as unwatched": clearing stored plays, the reset guard that
-stops history imports from bringing them back, the Jellyfin unplayed webhook,
-and the /api/unwatch routes. No media server is needed: server calls are
+"""Tests for "mark as unwatched" / "mark as watched": clearing and adding
+stored plays, the reset guard that stops history imports from bringing old
+plays back, the Jellyfin unplayed webhook, and the /api/unwatch and
+/api/mark-watched routes. No media server is needed: server calls are
 monkeypatched and each test uses its own temporary database.
 """
 import os
@@ -13,7 +14,7 @@ import pytest
 
 import config_store
 import db as db_mod
-from webhook_state import pwe_clear_item, pwe_reset_blocks, pwe_get_played
+from webhook_state import pwe_clear_item, pwe_mark_item, pwe_reset_blocks, pwe_get_played
 
 SETUP_BODY = {"username": "owner", "password": "ownerpass1", "confirm_password": "ownerpass1",
               "jellyfin_url": "https://jf.example", "jellyfin_api_key": "FAKE_API_KEY_123",
@@ -143,6 +144,11 @@ def client(tmp_path, monkeypatch, tmpdb):
         calls.append((raw, account_id))
         return ("failed", "Jellyfin didn't accept the request") if account_id == "jf_b" else ("ok", "")
     monkeypatch.setattr(je, "unmark_on_server", fake_unmark)
+
+    def fake_mark(raw, account_id, ctx):
+        calls.append(("mark", raw, account_id))
+        return ("ok", "")
+    monkeypatch.setattr(je, "mark_on_server", fake_mark)
     yield A, c, calls
     config_store._cfg_cache.update(mtime=None, data=None)
 
@@ -182,3 +188,59 @@ def test_unwatch_batch(client, tmpdb):
     assert r.status_code == 200
     assert calls == [("101", "jf_a"), ("102", "jf_a")]
     assert c.post("/api/unwatch-batch", json={"userIds": ["jf_a"]}).status_code == 400
+
+
+# ── pwe_mark_item ─────────────────────────────────────────────────────
+def test_mark_item_adds_play_and_drops_reset(tmpdb):
+    db = tmpdb.get_db()
+    pwe_clear_item(db, "jf_a", "movie", {"Tmdb": "5"}, "jf_105", "2026-06-01T00:00:00+00:00")
+    n = pwe_mark_item(db, "jf_a", "movie", {"Tmdb": "5", "Imdb": "tt5"}, "jf_105", "2026-07-01T00:00:00+00:00")
+    db.commit()
+    assert n == 2
+    assert pwe_get_played(db, ["jf_a"], ["movie"])[("tmdb", "5", "movie")] == {"jf_a"}
+    assert not pwe_reset_blocks(db, "jf_a", "movie", {"Tmdb": "5"}, "jf_105", "2026-01-01T00:00:00+00:00")
+    db.close()
+
+
+def test_mark_item_keeps_existing_play_date(tmpdb):
+    db = _seed(tmpdb)
+    assert pwe_mark_item(db, "jf_a", "movie", {"Tmdb": "1"}, "jf_101", "2026-09-09T00:00:00+00:00") == 0
+    row = db.execute("SELECT updated_at FROM watch_events WHERE account_id='jf_a' AND provider_id='1'").fetchone()
+    assert row["updated_at"] == "2026-01-01T00:00:00+00:00"
+    db.close()
+
+
+def test_mark_item_without_providers_uses_rating_key(tmpdb):
+    db = tmpdb.get_db()
+    assert pwe_mark_item(db, "jf_a", "episode", {}, "jf_107", "2026-07-01T00:00:00+00:00") == 1
+    row = db.execute("SELECT provider_type, provider_id, rating_key FROM watch_events").fetchone()
+    assert tuple(row) == ("ratingkey", "jf_107", "jf_107")
+    db.close()
+
+
+# ── /api/mark-watched routes ──────────────────────────────────────────
+def test_mark_watched_route(client, tmpdb):
+    A, c, calls = client
+    r = c.post("/api/mark-watched/jf_101", json={"userIds": ["jf_a", "jf_b"]})
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["success"] is True and data["added"] == 2 and data["issues"] == []
+    assert calls == [("mark", "101", "jf_a"), ("mark", "101", "jf_b")]
+    db = tmpdb.get_db()
+    assert pwe_get_played(db, ["jf_a", "jf_b"], ["movie"])[("tmdb", "1", "movie")] == {"jf_a", "jf_b"}
+    db.close()
+
+
+def test_mark_watched_requires_login_and_users(client):
+    A, c, calls = client
+    assert A.app.test_client().post("/api/mark-watched/jf_101", json={"userIds": ["jf_a"]}).status_code == 401
+    assert c.post("/api/mark-watched/jf_101", json={"userIds": []}).status_code == 400
+    assert c.post("/api/mark-watched-batch", json={"userIds": ["jf_a"]}).status_code == 400
+    assert calls == []
+
+
+def test_mark_watched_batch(client):
+    A, c, calls = client
+    r = c.post("/api/mark-watched-batch", json={"itemIds": ["jf_101", "jf_102"], "userIds": ["jf_a"]})
+    assert r.status_code == 200
+    assert calls == [("mark", "101", "jf_a"), ("mark", "102", "jf_a")]

@@ -76,6 +76,17 @@ def jellyfin_mark_unplayed(item_id, user_id):
     r.raise_for_status()
     return r
 
+def jellyfin_mark_played(item_id, user_id):
+    """Mark an item played for one user. On a series or season Jellyfin
+    marks every episode in it. Same route fallback as jellyfin_mark_unplayed."""
+    base = get_jellyfin_url()
+    r = _session.post(f"{base}/UserPlayedItems/{item_id}", headers=_jf_headers(),
+                      params={"userId": user_id}, timeout=30)
+    if r.status_code in (404, 405):
+        r = _session.post(f"{base}/Users/{user_id}/PlayedItems/{item_id}", headers=_jf_headers(), timeout=30)
+    r.raise_for_status()
+    return r
+
 def jellyfin_users():
     """Visible accounts (hidden filtered out)."""
     cfg = load_config()
